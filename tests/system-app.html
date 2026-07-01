@@ -42,6 +42,12 @@
       const win = document.getElementById('app').contentWindow;
       const doc = win.document;
 
+      suite('Version indicator (stale-cache sanity check)');
+      test('a version/build string is visibly rendered on the page', () => {
+        const text = doc.getElementById('wgcVersion').textContent;
+        assert.isTrue(/^v\d+\.\d+\.\d+ · build \d+$/.test(text), `expected a "vX.Y.Z · build N" string, got "${text}"`);
+      });
+
       suite('Tab switching');
       test('clicking a tab swaps the parameter panel to that geometry type', () => {
         clickTab(doc, 'invv');
@@ -196,6 +202,45 @@
         assert.close(x2, 100 * 0.3048, 0.01, `expected the MMANA X2 coordinate to be in meters (~30.48) regardless of display unit, got ${x2}`);
         doc.querySelector('#unitToggle [data-unit="ft"]').click();
         doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
+      });
+
+      suite('Copy button (clipboard fallback regression guard)');
+      test('shows a visible success state when the Clipboard API succeeds', async () => {
+        const nav = win.navigator;
+        const original = nav.clipboard.writeText;
+        nav.clipboard.writeText = () => Promise.resolve();
+        doc.getElementById('wgcCopyBtn').click();
+        await new Promise(r => win.setTimeout(r, 100));
+        const btn = doc.getElementById('wgcCopyBtn');
+        assert.isTrue(btn.classList.contains('copied'), `expected the "copied" success state, got class="${btn.className}"`);
+        nav.clipboard.writeText = original;
+      });
+      test('falls back to execCommand and still shows success if the Clipboard API is unavailable', async () => {
+        const nav = win.navigator;
+        const originalWriteText = nav.clipboard.writeText;
+        const originalExecCommand = doc.execCommand;
+        nav.clipboard.writeText = () => Promise.reject(new Error('denied — simulating an insecure (file://) context'));
+        doc.execCommand = () => true; // simulate the legacy fallback succeeding
+        doc.getElementById('wgcCopyBtn').click();
+        await new Promise(r => win.setTimeout(r, 100));
+        const btn = doc.getElementById('wgcCopyBtn');
+        assert.isTrue(btn.classList.contains('copied'), `expected the fallback to still report success, got class="${btn.className}"`);
+        nav.clipboard.writeText = originalWriteText;
+        doc.execCommand = originalExecCommand;
+      });
+      test('shows a visible failure state (not a silent no-op) when both copy mechanisms fail', async () => {
+        const nav = win.navigator;
+        const originalWriteText = nav.clipboard.writeText;
+        const originalExecCommand = doc.execCommand;
+        nav.clipboard.writeText = () => Promise.reject(new Error('denied'));
+        doc.execCommand = () => false;
+        doc.getElementById('wgcCopyBtn').click();
+        await new Promise(r => win.setTimeout(r, 100));
+        const btn = doc.getElementById('wgcCopyBtn');
+        assert.isTrue(btn.classList.contains('copy-failed'), `expected a visible failure state instead of a silent no-op, got class="${btn.className}"`);
+        assert.isTrue(btn.textContent.length > 0 && btn.textContent !== 'Copy', 'expected the button text to change to signal failure');
+        nav.clipboard.writeText = originalWriteText;
+        doc.execCommand = originalExecCommand;
       });
 
       window.runTests();

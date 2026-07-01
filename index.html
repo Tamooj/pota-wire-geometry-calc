@@ -169,6 +169,14 @@
     margin-top:2px;
     line-height:1.4;
   }
+  .wgc-version{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:9px;
+    color:var(--khaki-dim);
+    opacity:0.55;
+    text-align:right;
+    margin-top:10px;
+  }
   .wgc-warn{
     background:rgba(217,99,74,0.15);
     border:1px solid var(--red-warn);
@@ -265,6 +273,7 @@
   }
   .wgc-copy-btn:hover{background:var(--amber);color:#1a1a12;}
   .wgc-copy-btn.copied{background:var(--green-signal); color:#1a1a12;}
+  .wgc-copy-btn.copy-failed{background:var(--red-warn); color:#1a1a12;}
   textarea.wgc-export{
     width:100%;
     height:90px;
@@ -344,10 +353,19 @@
       </div>
     </div>
   </div>
+  <div class="wgc-version" id="wgcVersion"></div>
 </div>
 
 <script>
 (function(){
+  // Bump on every code change that touches index.html — a quick sanity check
+  // against testing a stale cached copy (browser tab, iframe, CDN, etc.).
+  // Single source of truth; also mirrored in docs/DESIGN.md's Status line
+  // for the more meaningful version number, but BUILD should tick up on every
+  // single edit regardless of how small.
+  const APP_VERSION = 'v1.4.1';
+  const APP_BUILD = 2;
+
   const root = document.getElementById('wgcRoot');
   let unit = 'ft';
   let type = 'sloper';
@@ -917,15 +935,46 @@
     renderOutputs();
   });
 
-  document.getElementById('wgcCopyBtn').addEventListener('click', ()=>{
-    const ta = document.getElementById('wgcExport');
-    ta.select();
-    navigator.clipboard.writeText(ta.value).then(()=>{
-      const btn = document.getElementById('wgcCopyBtn');
+  function showCopyOutcome(ok){
+    const btn = document.getElementById('wgcCopyBtn');
+    btn.classList.remove('copied', 'copy-failed');
+    if(ok){
       btn.textContent = 'Copied';
       btn.classList.add('copied');
-      setTimeout(()=>{ btn.textContent='Copy'; btn.classList.remove('copied'); }, 1400);
-    });
+    } else {
+      btn.textContent = 'Select text & Ctrl+C';
+      btn.classList.add('copy-failed');
+    }
+    const resetDelay = ok ? 1400 : 2400;
+    setTimeout(()=>{ btn.textContent='Copy'; btn.classList.remove('copied','copy-failed'); }, resetDelay);
+  }
+
+  // Legacy fallback for contexts where the async Clipboard API is unavailable
+  // or rejects — e.g. navigator.clipboard.writeText requires a "secure
+  // context" (HTTPS or localhost) and silently fails with no visible error
+  // when this file is opened directly via file://, which is a normal way to
+  // use a single-file, no-server tool like this one.
+  function legacyCopy(ta){
+    try {
+      ta.focus();
+      ta.select();
+      return document.execCommand('copy');
+    } catch(e){
+      return false;
+    }
+  }
+
+  document.getElementById('wgcCopyBtn').addEventListener('click', ()=>{
+    const ta = document.getElementById('wgcExport');
+    ta.focus();
+    ta.select();
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(ta.value)
+        .then(()=>showCopyOutcome(true))
+        .catch(()=>showCopyOutcome(legacyCopy(ta)));
+    } else {
+      showCopyOutcome(legacyCopy(ta));
+    }
   });
 
   // Exposes the pure geometry functions for the test suite in tests/*.html
@@ -933,6 +982,8 @@
   // copy, so tests can never drift out of sync with shipped behavior).
   // Purely additive — no effect on the app itself.
   window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA, findConnection, eznecNum, mmanaNum };
+
+  document.getElementById('wgcVersion').textContent = `${APP_VERSION} · build ${APP_BUILD}`;
 
   render();
 })();
