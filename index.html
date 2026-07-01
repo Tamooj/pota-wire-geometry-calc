@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POTA Wire Antenna Geometry Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #171b17;
+    --bg-panel: #1e231e;
+    --grid-line: #2a3128;
+    --khaki: #c9b896;
+    --khaki-dim: #8a8168;
+    --amber: #ffa726;
+    --amber-dim: #b5762a;
+    --green-signal: #7fb069;
+    --red-warn: #d9634a;
+    --paper: #edeae0;
+    --border: #3a4238;
+  }
+  *{box-sizing:border-box;}
+  .wgc-root{
+    background:var(--bg);
+    color:var(--khaki);
+    font-family:'IBM Plex Sans', sans-serif;
+    padding:20px;
+    border-radius:6px;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size:22px 22px;
+  }
+  .wgc-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:2px solid var(--amber-dim);
+    padding-bottom:10px;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .wgc-title{
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:700;
+    font-size:20px;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    color:var(--paper);
+  }
+  .wgc-title span{color:var(--amber);}
+  .wgc-sub{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--khaki-dim);
+    letter-spacing:0.03em;
+  }
+  .wgc-unit-toggle{
+    display:flex;
+    border:1px solid var(--border);
+    border-radius:3px;
+    overflow:hidden;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+  }
+  .wgc-unit-toggle button{
+    background:var(--bg-panel);
+    color:var(--khaki-dim);
+    border:none;
+    padding:6px 12px;
+    cursor:pointer;
+    transition:all .15s;
+  }
+  .wgc-unit-toggle button.active{
+    background:var(--amber-dim);
+    color:var(--paper);
+  }
+  .wgc-tabs{
+    display:flex;
+    gap:4px;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+  }
+  .wgc-tab{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    color:var(--khaki-dim);
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:600;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    padding:9px 14px;
+    cursor:pointer;
+    border-radius:3px;
+    transition:all .15s;
+  }
+  .wgc-tab.active{
+    background:var(--amber);
+    color:#1a1a12;
+    border-color:var(--amber);
+  }
+  .wgc-tab:hover:not(.active){
+    border-color:var(--amber-dim);
+    color:var(--khaki);
+  }
+  .wgc-grid{
+    display:grid;
+    grid-template-columns:280px 1fr;
+    gap:18px;
+  }
+  @media (max-width:820px){
+    .wgc-grid{grid-template-columns:1fr;}
+  }
+  .wgc-panel{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:4px;
+    padding:14px;
+  }
+  .wgc-panel-label{
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:700;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--amber-dim);
+    margin-bottom:10px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:6px;
+  }
+  .wgc-field{
+    margin-bottom:11px;
+  }
+  .wgc-field label{
+    display:flex;
+    justify-content:space-between;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--khaki);
+    margin-bottom:4px;
+  }
+  .wgc-field label .wgc-val{
+    color:var(--amber);
+    font-weight:600;
+  }
+  .wgc-field input[type="number"]{
+    width:100%;
+    background:#12150f;
+    border:1px solid var(--border);
+    color:var(--paper);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    padding:6px 8px;
+    border-radius:3px;
+  }
+  .wgc-field input[type="range"]{
+    width:100%;
+    accent-color:var(--amber);
+  }
+  .wgc-field-row{display:flex; gap:8px;}
+  .wgc-field-row .wgc-field{flex:1;}
+  .wgc-hint{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--khaki-dim);
+    margin-top:2px;
+    line-height:1.4;
+  }
+  .wgc-warn{
+    background:rgba(217,99,74,0.15);
+    border:1px solid var(--red-warn);
+    color:#f0a494;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    padding:8px 10px;
+    border-radius:3px;
+    margin-top:8px;
+  }
+  .wgc-diagrams{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin-bottom:14px;
+  }
+  @media (max-width:600px){
+    .wgc-diagrams{grid-template-columns:1fr;}
+  }
+  .wgc-svg-box{
+    background:#12150f;
+    border:1px solid var(--border);
+    border-radius:4px;
+    padding:8px;
+  }
+  .wgc-svg-title{
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:600;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--khaki-dim);
+    margin-bottom:4px;
+  }
+  table.wgc-table{
+    width:100%;
+    border-collapse:collapse;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+  }
+  table.wgc-table th{
+    text-align:right;
+    color:var(--amber);
+    font-weight:600;
+    padding:6px 8px;
+    border-bottom:2px solid var(--amber-dim);
+    text-transform:uppercase;
+    font-size:10px;
+    letter-spacing:0.04em;
+  }
+  table.wgc-table th:first-child, table.wgc-table td:first-child{text-align:left;}
+  table.wgc-table td{
+    text-align:right;
+    padding:5px 8px;
+    color:var(--paper);
+    border-bottom:1px solid var(--border);
+  }
+  table.wgc-table tr:hover td{background:rgba(255,167,38,0.06);}
+  .wgc-summary{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    margin:10px 0 14px 0;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+  }
+  .wgc-summary-item{
+    background:#12150f;
+    border:1px solid var(--border);
+    border-radius:3px;
+    padding:6px 10px;
+  }
+  .wgc-summary-item .k{color:var(--khaki-dim); margin-right:6px;}
+  .wgc-summary-item .v{color:var(--green-signal); font-weight:600;}
+  .wgc-export-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:6px;
+  }
+  .wgc-copy-btn{
+    background:var(--amber-dim);
+    color:var(--paper);
+    border:none;
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:600;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    padding:6px 12px;
+    border-radius:3px;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  .wgc-copy-btn:hover{background:var(--amber);color:#1a1a12;}
+  .wgc-copy-btn.copied{background:var(--green-signal); color:#1a1a12;}
+  textarea.wgc-export{
+    width:100%;
+    height:90px;
+    background:#12150f;
+    border:1px solid var(--border);
+    color:var(--green-signal);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    padding:8px;
+    border-radius:3px;
+    resize:vertical;
+  }
+  body{ margin:0; background:#171b17; }
+</style>
+</head>
+<body>
+
+<div class="wgc-root" id="wgcRoot">
+  <div class="wgc-header">
+    <div>
+      <div class="wgc-title">Wire Antenna <span>Geometry</span> Calculator</div>
+      <div class="wgc-sub">EZNEC / MMANA coordinate generator — field-deployable wire models</div>
+    </div>
+    <div class="wgc-unit-toggle" id="unitToggle">
+      <button data-unit="ft" class="active">FEET</button>
+      <button data-unit="m">METERS</button>
+    </div>
+  </div>
+
+  <div class="wgc-tabs" id="wgcTabs">
+    <button class="wgc-tab active" data-type="sloper">Straight Sloper</button>
+    <button class="wgc-tab" data-type="invv">Inverted-V End-Fed</button>
+    <button class="wgc-tab" data-type="sag">Sagging Sloper</button>
+    <button class="wgc-tab" data-type="counterpoise">Counterpoise Fan</button>
+  </div>
+
+  <div class="wgc-grid">
+    <div class="wgc-panel" id="wgcInputs"></div>
+
+    <div>
+      <div class="wgc-diagrams">
+        <div class="wgc-svg-box">
+          <div class="wgc-svg-title">Side Profile (elevation)</div>
+          <svg id="svgSide" viewBox="0 0 320 220" style="width:100%;height:auto;"></svg>
+        </div>
+        <div class="wgc-svg-box">
+          <div class="wgc-svg-title">Plan View (bearing, N up)</div>
+          <svg id="svgTop" viewBox="0 0 320 220" style="width:100%;height:auto;"></svg>
+        </div>
+      </div>
+
+      <div class="wgc-summary" id="wgcSummary"></div>
+
+      <div class="wgc-panel">
+        <div class="wgc-panel-label">Coordinate Table (X=East, Y=North, Z=Up, feed at origin)</div>
+        <table class="wgc-table" id="wgcTable"></table>
+      </div>
+
+      <div class="wgc-panel" style="margin-top:12px;">
+        <div class="wgc-export-header">
+          <div class="wgc-panel-label" style="margin:0;border:none;padding:0;">Plain-Text Export (tab-separated, paste into wire editor)</div>
+          <button class="wgc-copy-btn" id="wgcCopyBtn">Copy</button>
+        </div>
+        <textarea class="wgc-export" id="wgcExport" readonly></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const root = document.getElementById('wgcRoot');
+  let unit = 'ft';
+  let type = 'sloper';
+
+  const state = {
+    sloper: { az:90, z1:4, z2:28, dist:35 },
+    invv:   { azApex:90, zApex:32, z1:4, d1:22, az2:270, z2:6, d2:18 },
+    sag:    { az:90, z1:4, z2:26, dist:30, wireLen:36 },
+    counterpoise: { n:4, len:25, zAttach:1, zEnd:0, centerAz:270, spread:140 }
+  };
+
+  function toM(v){ return unit==='ft' ? v*0.3048 : v; }
+  function fromM(v){ return unit==='ft' ? v/0.3048 : v; }
+  function uLabel(){ return unit==='ft' ? 'ft' : 'm'; }
+  function fmt(v){ return (Math.round(v*100)/100).toFixed(2); }
+
+  function az2xy(az, r){
+    const rad = az*Math.PI/180;
+    return { x: r*Math.sin(rad), y: r*Math.cos(rad) };
+  }
+
+  // ---------- Field definitions per type ----------
+  function fieldsHTML(){
+    if(type==='sloper'){
+      const s = state.sloper;
+      return `
+        ${numField('sloper','az','Azimuth to far end (° from N)', s.az, 0,360,1,'')}
+        ${numField('sloper','z1','Feed height', s.z1, 0,50,0.5,uLabel())}
+        ${numField('sloper','z2','Support height (far end)', s.z2, 1,80,0.5,uLabel())}
+        ${numField('sloper','dist','Horizontal distance to support', s.dist, 1,150,1,uLabel())}
+        <div class="wgc-hint">Wire length and elevation angle are derived. Use for a wire run straight to one tree/mast — no sag modeled (assume reasonably taut).</div>
+      `;
+    }
+    if(type==='invv'){
+      const s = state.invv;
+      return `
+        ${numField('invv','zApex','Apex (mast) height', s.zApex, 3,80,0.5,uLabel())}
+        <div class="wgc-hint" style="margin-bottom:8px;">— Leg 1 (feed end) —</div>
+        ${numField('invv','azApex','Azimuth, apex→feed (° from N)', s.azApex, 0,360,1,'')}
+        ${numField('invv','z1','Feed height', s.z1, 0,20,0.5,uLabel())}
+        ${numField('invv','d1','Horizontal dist, apex→feed', s.d1, 1,100,1,uLabel())}
+        <div class="wgc-hint" style="margin-bottom:8px;">— Leg 2 (far end) —</div>
+        ${numField('invv','az2','Azimuth, apex→far end (° from N)', s.az2, 0,360,1,'')}
+        ${numField('invv','z2','Far-end height', s.z2, 0,20,0.5,uLabel())}
+        ${numField('invv','d2','Horizontal dist, apex→far end', s.d2, 1,100,1,uLabel())}
+        <div class="wgc-hint">Legs need not be collinear — set az2 ≠ azApex+180 for a bent V between two mismatched trees. Straight legs, no sag.</div>
+      `;
+    }
+    if(type==='sag'){
+      const s = state.sag;
+      const straight = Math.sqrt(s.dist*s.dist + (s.z2-s.z1)*(s.z2-s.z1));
+      const warn = s.wireLen <= straight ? `<div class="wgc-warn">Wire length must exceed the straight-line distance (${fmt(straight)} ${uLabel()}) or there's no slack to sag. Increase wire length.</div>` : '';
+      return `
+        ${numField('sag','az','Azimuth to anchor (° from N)', s.az, 0,360,1,'')}
+        ${numField('sag','z1','Feed height', s.z1, 0,50,0.5,uLabel())}
+        ${numField('sag','z2','Anchor height', s.z2, 1,80,0.5,uLabel())}
+        ${numField('sag','dist','Horizontal distance to anchor', s.dist, 1,150,1,uLabel())}
+        ${numField('sag','wireLen','Actual wire length (slack included)', s.wireLen, 1,200,0.5,uLabel())}
+        ${warn}
+        <div class="wgc-hint">Models real catenary droop from excess wire length beyond the taut straight-line distance. Outputs 11 waypoints along the curve for a multi-segment NEC wire.</div>
+      `;
+    }
+    if(type==='counterpoise'){
+      const s = state.counterpoise;
+      return `
+        ${numField('counterpoise','n','Number of radials', s.n, 1,12,1,'')}
+        ${numField('counterpoise','len','Radial length', s.len, 1,100,1,uLabel())}
+        ${numField('counterpoise','zAttach','Height at feed/attach point', s.zAttach, 0,10,0.25,uLabel())}
+        ${numField('counterpoise','zEnd','Height at radial ends (0 = on ground)', s.zEnd, 0,10,0.25,uLabel())}
+        ${numField('counterpoise','centerAz','Fan center azimuth (° from N)', s.centerAz, 0,360,1,'')}
+        ${numField('counterpoise','spread','Fan spread (total angle)', s.spread, 0,360,5,'°')}
+        <div class="wgc-hint">Radials fan evenly across the spread, centered on the azimuth. Spread=360 with N radials gives an even star pattern. Straight radials, no sag.</div>
+      `;
+    }
+  }
+
+  function numField(grp, key, label, val, min, max, step, suffix){
+    return `
+      <div class="wgc-field">
+        <label>${label} <span class="wgc-val" id="lbl_${grp}_${key}">${val}${suffix?' '+suffix:''}</span></label>
+        <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-grp="${grp}" data-key="${key}">
+      </div>
+    `;
+  }
+
+  function bindInputs(){
+    root.querySelectorAll('#wgcInputs input[type="range"]').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const grp = e.target.dataset.grp, key = e.target.dataset.key;
+        state[grp][key] = parseFloat(e.target.value);
+        const lbl = document.getElementById(`lbl_${grp}_${key}`);
+        const suffixMatch = lbl.textContent.match(/[a-z°]+$/i);
+        lbl.textContent = e.target.value + (suffixMatch && key!=='n' && !['az','az2','azApex','centerAz','spread'].includes(key) ? ' '+uLabel() : (key.startsWith('az')||key==='centerAz' ? '' : (key==='spread'?'°':(key==='n'?'':''))));
+        render();
+      });
+    });
+  }
+
+  // ---------- Geometry builders (all internal math in the *display* unit) ----------
+  function buildSloper(){
+    const s = state.sloper;
+    const wireLen = Math.sqrt(s.dist*s.dist + (s.z2-s.z1)*(s.z2-s.z1));
+    const elev = Math.atan2(s.z2-s.z1, s.dist)*180/Math.PI;
+    const p1 = {x:0,y:0,z:s.z1};
+    const far = az2xy(s.az, s.dist);
+    const p2 = {x:far.x, y:far.y, z:s.z2};
+    return {
+      points: [ {label:'Feed', ...p1}, {label:'Far end', ...p2} ],
+      wires: [ {label:'W1 (radiator)', from:p1, to:p2} ],
+      summary: [ ['Wire length', fmt(wireLen)+' '+uLabel()], ['Elevation angle', fmt(elev)+'°'] ]
+    };
+  }
+
+  function buildInvV(){
+    const s = state.invv;
+    const apex = {x:0,y:0,z:s.zApex};
+    const feedOff = az2xy(s.azApex, s.d1);
+    const feed = {x:feedOff.x, y:feedOff.y, z:s.z1};
+    const farOff = az2xy(s.az2, s.d2);
+    const far = {x:farOff.x, y:farOff.y, z:s.z2};
+    const len1 = Math.sqrt(s.d1*s.d1 + (s.zApex-s.z1)*(s.zApex-s.z1));
+    const len2 = Math.sqrt(s.d2*s.d2 + (s.zApex-s.z2)*(s.zApex-s.z2));
+    return {
+      points: [ {label:'Feed', ...feed}, {label:'Apex (mast)', ...apex}, {label:'Far end', ...far} ],
+      wires: [ {label:'W1 (feed→apex)', from:feed, to:apex}, {label:'W2 (apex→far end)', from:apex, to:far} ],
+      summary: [ ['Leg 1 length', fmt(len1)+' '+uLabel()], ['Leg 2 length', fmt(len2)+' '+uLabel()], ['Total wire', fmt(len1+len2)+' '+uLabel()] ]
+    };
+  }
+
+  function solveCatenaryA(l,h,s){
+    const target = s*s-h*h;
+    function f(a){ const x=l/(2*a); return 4*a*a*Math.sinh(x)*Math.sinh(x) - target; }
+    let lo=1e-6*l, hi=1000*l;
+    for(let i=0;i<200;i++){ const mid=(lo+hi)/2; if(f(mid)>0) lo=mid; else hi=mid; }
+    return (lo+hi)/2;
+  }
+
+  function buildSag(){
+    const s = state.sag;
+    const l = s.dist, h = s.z2-s.z1, wire = s.wireLen;
+    const straight = Math.sqrt(l*l+h*h);
+    if(wire<=straight){
+      return { points:[], wires:[], summary:[['Status','wire too short — increase length']], invalid:true };
+    }
+    const a = solveCatenaryA(l,h,wire);
+    const xv = (l/2) - a*Math.asinh(h/(2*a*Math.sinh(l/(2*a))));
+    const C = s.z1 - a*Math.cosh(xv/a);
+    function zAt(x){ return a*Math.cosh((x-xv)/a) + C; }
+    const N = 10;
+    const pts = [];
+    for(let i=0;i<=N;i++){
+      const x = i/N*l;
+      const z = zAt(x);
+      const off = az2xy(s.az, x);
+      pts.push({x:off.x, y:off.y, z:z, label: i===0?'Feed':(i===N?'Anchor':`P${i}`)});
+    }
+    const wires = [];
+    for(let i=0;i<pts.length-1;i++){
+      wires.push({label:`W${i+1}`, from:pts[i], to:pts[i+1]});
+    }
+    const sagDepth = Math.max(0, s.z1 - zAt(xv) >= 0 ? (s.z1 < zAt(0)?0:0) : 0); // vertex sag relative to chord, computed below
+    // sag relative to straight chord: find lowest point of catenary vs chord line
+    let maxSag = 0;
+    for(let i=0;i<=100;i++){
+      const x=i/100*l;
+      const zc = zAt(x);
+      const zChord = s.z1 + (h)*(x/l);
+      const sagHere = zChord - zc;
+      if(sagHere>maxSag) maxSag = sagHere;
+    }
+    return {
+      points: pts, wires,
+      summary: [ ['Straight-line dist', fmt(straight)+' '+uLabel()], ['Slack', fmt(wire-straight)+' '+uLabel()], ['Max sag below chord', fmt(maxSag)+' '+uLabel()] ]
+    };
+  }
+
+  function buildCounterpoise(){
+    const s = state.counterpoise;
+    const n = Math.round(s.n);
+    const pts = [];
+    const wires = [];
+    const feed = {x:0,y:0,z:s.zAttach};
+    for(let i=0;i<n;i++){
+      let az;
+      if(n===1){ az = s.centerAz; }
+      else { az = s.centerAz - s.spread/2 + i*(s.spread/(n-1)); }
+      const off = az2xy(az, s.len);
+      const end = {x:off.x, y:off.y, z:s.zEnd};
+      pts.push({label:`R${i+1} end`, ...end});
+      wires.push({label:`R${i+1}`, from:feed, to:end});
+    }
+    return {
+      points: [{label:'Feed/attach', ...feed}, ...pts],
+      wires,
+      summary: [ ['Radials', n], ['Length each', fmt(s.len)+' '+uLabel()], ['Total wire', fmt(n*s.len)+' '+uLabel()] ]
+    };
+  }
+
+  function build(){
+    if(type==='sloper') return buildSloper();
+    if(type==='invv') return buildInvV();
+    if(type==='sag') return buildSag();
+    if(type==='counterpoise') return buildCounterpoise();
+  }
+
+  // ---------- Rendering ----------
+  function renderTable(model){
+    const tbl = document.getElementById('wgcTable');
+    if(model.invalid){ tbl.innerHTML = '<tr><td>—</td></tr>'; return; }
+    let rows = '<tr><th>Point</th><th>X (E)</th><th>Y (N)</th><th>Z (Up)</th></tr>';
+    model.points.forEach(p=>{
+      rows += `<tr><td>${p.label}</td><td>${fmt(p.x)}</td><td>${fmt(p.y)}</td><td>${fmt(p.z)}</td></tr>`;
+    });
+    tbl.innerHTML = rows;
+  }
+
+  function renderSummary(model){
+    const el = document.getElementById('wgcSummary');
+    el.innerHTML = model.summary.map(([k,v])=>`<div class="wgc-summary-item"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+  }
+
+  function renderExport(model){
+    const ta = document.getElementById('wgcExport');
+    if(model.invalid){ ta.value = ''; return; }
+    let lines = [`# Wire antenna geometry export — ${type} — units: ${uLabel()}`, `# label\tX1\tY1\tZ1\tX2\tY2\tZ2`];
+    model.wires.forEach(w=>{
+      lines.push(`${w.label}\t${fmt(w.from.x)}\t${fmt(w.from.y)}\t${fmt(w.from.z)}\t${fmt(w.to.x)}\t${fmt(w.to.y)}\t${fmt(w.to.z)}`);
+    });
+    ta.value = lines.join('\n');
+  }
+
+  function renderSVGs(model){
+    const side = document.getElementById('svgSide');
+    const top = document.getElementById('svgTop');
+    if(model.invalid || model.points.length===0){ side.innerHTML=''; top.innerHTML=''; return; }
+
+    const allX = model.points.map(p=>p.x), allY = model.points.map(p=>p.y), allZ = model.points.map(p=>p.z);
+    const minX=Math.min(0,...allX), maxX=Math.max(0,...allX);
+    const minY=Math.min(0,...allY), maxY=Math.max(0,...allY);
+    const minZ=0, maxZ=Math.max(1,...allZ);
+
+    // ---- Side view: horizontal radial distance from origin (signed along azimuth axis) vs Z ----
+    // project onto the dominant axis for simplicity: use distance from origin in XY, signed by dot with first non-feed point direction
+    function horizDist(p){
+      return Math.sqrt(p.x*p.x+p.y*p.y) * (Math.sign(p.x*allX[allX.length-1]+p.y*allY[allY.length-1]) || 1);
+    }
+    const hVals = model.points.map(horizDist);
+    const minH = Math.min(0,...hVals), maxH = Math.max(0,...hVals);
+    const padH = Math.max(1,(maxH-minH))*0.15;
+    const padZ = Math.max(1,(maxZ-minZ))*0.2;
+
+    const W=320,H=220, marginL=30, marginB=22, marginT=12, marginR=14;
+    const plotW = W-marginL-marginR, plotH = H-marginT-marginB;
+    function sx(h){ return marginL + (h-(minH-padH))/((maxH+padH)-(minH-padH))*plotW; }
+    function sz(z){ return marginT + plotH - (z-(0))/((maxZ+padZ)-0)*plotH; }
+
+    let sideSvg = `<line x1="${marginL}" y1="${sz(0)}" x2="${W-marginR}" y2="${sz(0)}" stroke="#3a4238" stroke-width="1"/>`;
+    sideSvg += `<line x1="${marginL}" y1="${marginT}" x2="${marginL}" y2="${H-marginB}" stroke="#3a4238" stroke-width="1"/>`;
+    // ground hatch
+    sideSvg += `<line x1="${marginL}" y1="${sz(0)}" x2="${W-marginR}" y2="${sz(0)}" stroke="#7fb069" stroke-width="1.5" stroke-dasharray="2,2"/>`;
+
+    if(model.wires){
+      model.wires.forEach(w=>{
+        const x1=sx(horizDist(w.from)), y1=sz(w.from.z), x2=sx(horizDist(w.to)), y2=sz(w.to.z);
+        sideSvg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#ffa726" stroke-width="2"/>`;
+      });
+    }
+    model.points.forEach(p=>{
+      const cx=sx(horizDist(p)), cy=sz(p.z);
+      sideSvg += `<circle cx="${cx}" cy="${cy}" r="3" fill="#edeae0"/>`;
+    });
+    // z axis labels
+    sideSvg += `<text x="4" y="${sz(0)+3}" font-size="8" fill="#8a8168" font-family="IBM Plex Mono">0</text>`;
+    sideSvg += `<text x="4" y="${sz(maxZ)+3}" font-size="8" fill="#8a8168" font-family="IBM Plex Mono">${fmt(maxZ)}</text>`;
+    side.innerHTML = sideSvg;
+
+    // ---- Top view: plan with compass rose ----
+    const cx0 = W/2, cy0 = H/2;
+    const maxR = Math.max(1, Math.max(Math.abs(minX),Math.abs(maxX),Math.abs(minY),Math.abs(maxY)));
+    const scale = (Math.min(plotW,plotH)/2 - 10) / (maxR*1.15);
+    function tx(x){ return cx0 + x*scale; }
+    function ty(y){ return cy0 - y*scale; } // north = up = -y in screen coords
+
+    let topSvg = '';
+    // compass rings
+    [0.33,0.66,1.0].forEach(f=>{
+      topSvg += `<circle cx="${cx0}" cy="${cy0}" r="${(Math.min(plotW,plotH)/2-10)*f}" fill="none" stroke="#2a3128" stroke-width="1"/>`;
+    });
+    topSvg += `<line x1="${cx0}" y1="8" x2="${cx0}" y2="${H-8}" stroke="#2a3128" stroke-width="1"/>`;
+    topSvg += `<line x1="8" y1="${cy0}" x2="${W-8}" y2="${cy0}" stroke="#2a3128" stroke-width="1"/>`;
+    topSvg += `<text x="${cx0-4}" y="14" font-size="9" fill="#8a8168" font-family="IBM Plex Mono">N</text>`;
+    topSvg += `<text x="${W-16}" y="${cy0+3}" font-size="9" fill="#8a8168" font-family="IBM Plex Mono">E</text>`;
+
+    if(model.wires){
+      model.wires.forEach(w=>{
+        topSvg += `<line x1="${tx(w.from.x)}" y1="${ty(w.from.y)}" x2="${tx(w.to.x)}" y2="${ty(w.to.y)}" stroke="#ffa726" stroke-width="2"/>`;
+      });
+    }
+    model.points.forEach(p=>{
+      topSvg += `<circle cx="${tx(p.x)}" cy="${ty(p.y)}" r="3" fill="#edeae0"/>`;
+    });
+    top.innerHTML = topSvg;
+  }
+
+  function render(){
+    document.getElementById('wgcInputs').innerHTML = `<div class="wgc-panel-label">Parameters</div>` + fieldsHTML();
+    bindInputs();
+    const model = build();
+    renderTable(model);
+    renderSummary(model);
+    renderExport(model);
+    renderSVGs(model);
+  }
+
+  // ---------- Unit conversion on toggle ----------
+  function convertAllUnits(newUnit){
+    if(newUnit===unit) return;
+    const factor = newUnit==='ft' ? (1/0.3048) : 0.3048; // from current unit to new
+    const lengthKeysByGrp = {
+      sloper:['z1','z2','dist'],
+      invv:['zApex','z1','d1','z2','d2'],
+      sag:['z1','z2','dist','wireLen'],
+      counterpoise:['len','zAttach','zEnd']
+    };
+    Object.keys(lengthKeysByGrp).forEach(grp=>{
+      lengthKeysByGrp[grp].forEach(k=>{
+        state[grp][k] = Math.round(state[grp][k]*factor*100)/100;
+      });
+    });
+    unit = newUnit;
+  }
+
+  document.getElementById('unitToggle').addEventListener('click', e=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    convertAllUnits(btn.dataset.unit);
+    root.querySelectorAll('#unitToggle button').forEach(b=>b.classList.toggle('active', b===btn));
+    render();
+  });
+
+  document.getElementById('wgcTabs').addEventListener('click', e=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    type = btn.dataset.type;
+    root.querySelectorAll('#wgcTabs button').forEach(b=>b.classList.toggle('active', b===btn));
+    render();
+  });
+
+  document.getElementById('wgcCopyBtn').addEventListener('click', ()=>{
+    const ta = document.getElementById('wgcExport');
+    ta.select();
+    navigator.clipboard.writeText(ta.value).then(()=>{
+      const btn = document.getElementById('wgcCopyBtn');
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(()=>{ btn.textContent='Copy'; btn.classList.remove('copied'); }, 1400);
+    });
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>
