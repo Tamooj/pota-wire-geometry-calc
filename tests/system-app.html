@@ -16,7 +16,7 @@
     <code>http://localhost:8000/tests/system-app.html</code>) — some browsers
     restrict script access across <code>file://</code> iframe boundaries.
   </p>
-  <iframe id="app" src="../index.html" style="width:900px; height:500px; border:1px solid #ccc;"></iframe>
+  <iframe id="app" style="width:900px; height:500px; border:1px solid #ccc;"></iframe>
   <div id="results" style="margin-top:16px;">Loading…</div>
 
   <script src="harness.js"></script>
@@ -35,6 +35,9 @@
       doc.querySelector(`#wgcTabs [data-type="${type}"]`).click();
     }
 
+    // Cache-bust the iframe load — a static src="../index.html" can otherwise
+    // serve a stale cached copy across test iterations during development.
+    document.getElementById('app').src = '../index.html?_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const win = document.getElementById('app').contentWindow;
       const doc = win.document;
@@ -114,6 +117,85 @@
         const labelText = doc.getElementById('lbl_sloper_dist').textContent;
         assert.equal(labelText, '10.67 m', `expected a clean fmt()-rounded label, got "${labelText}"`);
         doc.querySelector('#unitToggle [data-unit="ft"]').click();
+      });
+
+      suite('EZNEC export format (through the real UI)');
+      test('toggling to EZNEC format renders the WIRES-report header and chained connection strings', () => {
+        clickTab(doc, 'sag');
+        setSlider(doc, 'sag', 'az', 90);
+        setSlider(doc, 'sag', 'z1', 4);
+        setSlider(doc, 'sag', 'z2', 26);
+        setSlider(doc, 'sag', 'dist', 30);
+        setSlider(doc, 'sag', 'wireLen', 40);
+        doc.querySelector('#exportFormatToggle [data-format="eznec"]').click();
+        const text = doc.getElementById('wgcExport').value;
+        const lines = text.split('\n');
+        assert.isTrue(lines[0].startsWith('No.'), 'expected the EZNEC header row');
+        assert.isTrue(lines[1].includes('Conn.'), 'expected the EZNEC sub-header row');
+        assert.equal(lines.length, 12, 'expected 2 header lines + 10 wire rows');
+        assert.isTrue(lines[2].includes('W2E1'), 'expected wire 1 to chain forward to wire 2');
+        assert.isTrue(lines[3].includes('W1E2'), 'expected wire 2 to chain back to wire 1');
+        assert.isTrue(text.includes('#10'), 'expected the fixed wire-spec defaults to be present');
+        assert.isFalse(/e[+-]\d/i.test(text), 'expected no scientific-notation floating-point noise in coordinates');
+        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
+        clickTab(doc, 'sloper');
+      });
+      test('switching back to generic format restores the plain tab-separated export', () => {
+        clickTab(doc, 'sloper');
+        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
+        const text = doc.getElementById('wgcExport').value;
+        assert.isTrue(text.startsWith('# Wire antenna geometry export'), 'expected the generic export header comment');
+      });
+
+      suite('MMANA export format (through the real UI)');
+      test('toggling to MMANA format renders the .maa section structure with the entered frequency', () => {
+        clickTab(doc, 'sag');
+        setSlider(doc, 'sag', 'az', 90);
+        setSlider(doc, 'sag', 'z1', 4);
+        setSlider(doc, 'sag', 'z2', 26);
+        setSlider(doc, 'sag', 'dist', 30);
+        setSlider(doc, 'sag', 'wireLen', 40);
+        const freqInput = doc.getElementById('mmanaFreqInput');
+        freqInput.value = '7.15';
+        freqInput.dispatchEvent(new Event('input', { bubbles: true }));
+        doc.querySelector('#exportFormatToggle [data-format="mmana"]').click();
+        const text = doc.getElementById('wgcExport').value;
+        // Real .maa files use CRLF, but <textarea>.value always normalizes
+        // \r\n to \n (spec-required "API value" behavior) — LF is all a
+        // textarea can ever actually hold, so that's what we split on here.
+        const lines = text.split('\n');
+        assert.equal(lines[1], '*', 'expected the fixed "*" separator line');
+        assert.equal(lines[2], '7.15', 'expected the frequency field to reflect the input');
+        assert.equal(lines[3], '***Wires***');
+        assert.equal(lines[4], '10', 'expected the wire count to match the sag model\'s 10 segments');
+        assert.isTrue(lines.includes('*** Source ***'));
+        assert.isTrue(lines.includes('w1b,\t0.0,\t1.0'));
+        assert.isTrue(lines.includes('*** Load ***'));
+        assert.isTrue(lines.includes('0,\t1'));
+        assert.isTrue(lines.includes('*** Segmentation ***'));
+        assert.isTrue(lines.includes('*** G/H/M/R/AzEl/X ***'));
+        assert.isFalse(/e[+-]\d/i.test(text), 'expected no unexpected scientific-notation noise');
+        // Regression guard: SEG must be a bare integer ("-1"), not forced to "-1.0"
+        // by the same decimal-forcing rule that applies to every other field.
+        const wireLine = lines[5];
+        assert.isTrue(wireLine.endsWith(',\t-1'), `expected SEG to be a bare "-1" with no decimal, got line: "${wireLine}"`);
+        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
+        clickTab(doc, 'sloper');
+      });
+      test('MMANA coordinates are always in meters regardless of the active display unit', () => {
+        clickTab(doc, 'sloper');
+        setSlider(doc, 'sloper', 'az', 90);
+        setSlider(doc, 'sloper', 'z1', 0);
+        setSlider(doc, 'sloper', 'z2', 0);
+        setSlider(doc, 'sloper', 'dist', 100); // 100 ft
+        doc.querySelector('#unitToggle [data-unit="m"]').click(); // now the UI itself is in meters too
+        doc.querySelector('#exportFormatToggle [data-format="mmana"]').click();
+        const text = doc.getElementById('wgcExport').value;
+        const wireLine = text.split('\n')[5];
+        const x2 = parseFloat(wireLine.split(',\t')[3]);
+        assert.close(x2, 100 * 0.3048, 0.01, `expected the MMANA X2 coordinate to be in meters (~30.48) regardless of display unit, got ${x2}`);
+        doc.querySelector('#unitToggle [data-unit="ft"]').click();
+        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
       });
 
       window.runTests();

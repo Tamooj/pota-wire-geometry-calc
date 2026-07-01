@@ -12,11 +12,14 @@
     keeping a separate copy of the math — so these tests can never silently
     drift out of sync with what's actually shipped.
   </p>
-  <iframe id="app" src="../index.html" style="display:none;"></iframe>
+  <iframe id="app" style="display:none;"></iframe>
   <div id="results">Loading…</div>
 
   <script src="harness.js"></script>
   <script>
+    // Cache-bust the iframe load — a static src="../index.html" can otherwise
+    // serve a stale cached copy across test iterations during development.
+    document.getElementById('app').src = '../index.html?_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const WGC = document.getElementById('app').contentWindow.WGC;
 
@@ -114,6 +117,65 @@
         const end = m.points.find(p => p.label !== 'Feed/attach');
         const angle = (Math.atan2(end.x, end.y) * 180 / Math.PI + 360) % 360;
         assert.close(angle, 45, 1e-6);
+      });
+
+      suite('eznecNum — coordinate formatting for the EZNEC export');
+      test('trims to 6 significant figures without forcing fixed decimals', () => {
+        assert.equal(WGC.eznecNum(4.882890123), '4.88289');
+        assert.equal(WGC.eznecNum(0), '0');
+        assert.equal(WGC.eznecNum(25.945401), '25.9454');
+      });
+      test('snaps floating-point noise near zero to exact "0" (az2xy sin/cos artifact regression guard)', () => {
+        // e.g. az2xy(90, 30).y is ~1.8e-15, not exactly 0, due to cos(90deg) in radians.
+        assert.equal(WGC.eznecNum(1.83697e-15), '0');
+        assert.equal(WGC.eznecNum(-1.83697e-15), '0');
+      });
+
+      suite('findConnection — EZNEC "WIRES" connection-string generation');
+      test('a chain of wires links End2 of one to End1 of the next, ends of the chain are free', () => {
+        const m = WGC.buildSag({ az: 90, z1: 4, z2: 26, dist: 30, wireLen: 40 });
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '', 'first wire, first end should be free (the feedpoint)');
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), 'W2E1');
+        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].from), 'W1E2');
+        const last = m.wires.length - 1;
+        assert.equal(WGC.findConnection(m.wires, last, m.wires[last].to), '', 'last wire, last end should be free (the anchor tip)');
+      });
+      test('inverted-V apex links W1 End2 to W2 End1; feed/far ends are free', () => {
+        const m = WGC.buildInvV({ azApex: 90, zApex: 30, z1: 0, d1: 20, az2: 270, z2: 0, d2: 20 });
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '', 'feed end is free');
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), 'W2E1', 'apex end of leg 1 links to leg 2');
+        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].from), 'W1E2', 'apex end of leg 2 links back to leg 1');
+        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].to), '', 'far end is free');
+      });
+      test('a single free-standing wire (straight sloper) has no connections at all', () => {
+        const m = WGC.buildSloper({ az: 90, z1: 0, z2: 40, dist: 30 });
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '');
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), '');
+      });
+      test('counterpoise radials sharing one feed point each resolve to some other radial at that point (best-effort multi-way junction)', () => {
+        const m = WGC.buildCounterpoise({ n: 4, len: 25, zAttach: 1, zEnd: 0, centerAz: 270, spread: 360 });
+        // All 4 radials share m.wires[i].from === the feed point — every
+        // radial's End1 should resolve to *some* other radial's E1, since
+        // findConnection only reports one match per multi-way junction.
+        for (let i = 0; i < m.wires.length; i++) {
+          const conn = WGC.findConnection(m.wires, i, m.wires[i].from);
+          assert.isTrue(/^W\dE1$/.test(conn), `expected radial ${i}'s feed end to link to another radial's E1, got "${conn}"`);
+        }
+        // The radial ends themselves are all free (not shared with anything).
+        for (let i = 0; i < m.wires.length; i++) {
+          assert.equal(WGC.findConnection(m.wires, i, m.wires[i].to), '');
+        }
+      });
+
+      suite('mmanaNum — coordinate formatting for the MMANA export');
+      test('trims to 6 significant figures and always shows at least one decimal place', () => {
+        assert.equal(WGC.mmanaNum(4.882890123), '4.88289');
+        assert.equal(WGC.mmanaNum(0), '0.0');
+        assert.equal(WGC.mmanaNum(13), '13.0', 'integers must still show a decimal, matching real .maa files (e.g. "13.0" not "13")');
+      });
+      test('snaps floating-point noise near zero to exact "0.0"', () => {
+        assert.equal(WGC.mmanaNum(1.83697e-15), '0.0');
+        assert.equal(WGC.mmanaNum(-1.83697e-15), '0.0');
       });
 
       window.runTests();

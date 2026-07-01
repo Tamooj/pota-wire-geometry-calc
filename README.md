@@ -55,8 +55,16 @@ https://tamooj.github.io/pota-wire-geometry-calc/
   just display formatting, so switching units mid-edit never corrupts a model
 - **Live diagrams** — side-profile (elevation) and plan-view (compass-oriented,
   N-up) sketches that update as you drag parameters
-- **Tab-separated export** — copy-paste ready for EZNEC/MMANA wire-entry
-  tables
+- **Three export formats**, toggled in the export panel:
+  - **Generic** — minimal tab-separated table for manual paste
+  - **EZNEC** — approximates the layout of EZNEC Pro/2+'s own "Wires" report,
+    including `W{n}E{1|2}` connection strings that chain adjacent wires
+    together (e.g. the Sagging Sloper's 10 segments, or an Inverted-V's shared
+    apex point)
+  - **MMANA** — generates a real MMANA-GAL `.maa`-format body (Wires / Source /
+    Load / Segmentation / ground+pattern sections), with a small Frequency
+    (MHz) field since MMANA needs one and there's no way to derive it from
+    geometry alone
 - Runs entirely client-side; nothing is sent anywhere
 
 ## Coordinate convention
@@ -73,8 +81,13 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 - No ground-system loss, soil conductivity, or near-field ground modeling —
   output is geometry only, for import into a NEC-2 engine that handles the EM
   solve
-- No native `.nec` / `.ez` / `.maa` export yet — output is a generic
-  tab-separated coordinate table for manual paste (see roadmap)
+- The EZNEC and MMANA export formats approximate those tools' own file/report
+  layouts closely, but neither is a byte-verified, directly re-importable
+  native deck (not tested against the actual EZNEC/MMANA applications — see
+  roadmap)
+- EZNEC-format connection strings for a point shared by 3+ wires (e.g. a
+  counterpoise fan's common feed point) are best-effort — see
+  [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats-v12v13)
 - No sag modeling yet for inverted-V legs or counterpoise radials (only the
   dedicated Sagging Sloper tab models catenary droop)
 - Sliders only, no precise numeric entry (a synced number input is on the

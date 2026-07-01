@@ -325,8 +325,20 @@
 
       <div class="wgc-panel" style="margin-top:12px;">
         <div class="wgc-export-header">
-          <div class="wgc-panel-label" style="margin:0;border:none;padding:0;">Plain-Text Export (tab-separated, paste into wire editor)</div>
-          <button class="wgc-copy-btn" id="wgcCopyBtn">Copy</button>
+          <div class="wgc-panel-label" style="margin:0;border:none;padding:0;" id="wgcExportLabel">Plain-Text Export (tab-separated, paste into wire editor)</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <label style="display:flex; align-items:center; gap:4px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--khaki-dim);" title="Design frequency, used by the MMANA export (MMANA has no geometry-derived default for this).">
+              FREQ
+              <input type="number" id="mmanaFreqInput" value="14.0" min="0.1" max="3000" step="0.01" style="width:60px;">
+              MHz
+            </label>
+            <div class="wgc-unit-toggle" id="exportFormatToggle">
+              <button data-format="generic" class="active">GENERIC</button>
+              <button data-format="eznec">EZNEC</button>
+              <button data-format="mmana">MMANA</button>
+            </div>
+            <button class="wgc-copy-btn" id="wgcCopyBtn">Copy</button>
+          </div>
         </div>
         <textarea class="wgc-export" id="wgcExport" readonly></textarea>
       </div>
@@ -339,6 +351,8 @@
   const root = document.getElementById('wgcRoot');
   let unit = 'ft';
   let type = 'sloper';
+  let exportFormat = 'generic';
+  let mmanaFreq = 14.0;
 
   const state = {
     sloper: { az:90, z1:4, z2:28, dist:35 },
@@ -608,14 +622,146 @@
       : '';
   }
 
-  function renderExport(model){
-    const ta = document.getElementById('wgcExport');
-    if(model.invalid){ ta.value = ''; return; }
-    let lines = [`# Wire antenna geometry export — ${type} — units: ${uLabel()}`, `# label\tX1\tY1\tZ1\tX2\tY2\tZ2`];
+  function buildGenericExport(model){
+    const lines = [`# Wire antenna geometry export — ${type} — units: ${uLabel()}`, `# label\tX1\tY1\tZ1\tX2\tY2\tZ2`];
     model.wires.forEach(w=>{
       lines.push(`${w.label}\t${fmt(w.from.x)}\t${fmt(w.from.y)}\t${fmt(w.from.z)}\t${fmt(w.to.x)}\t${fmt(w.to.y)}\t${fmt(w.to.z)}`);
     });
-    ta.value = lines.join('\n');
+    return lines.join('\n');
+  }
+
+  // Formats a coordinate the way EZNEC's own "Wires" report does — variable
+  // precision (no forced decimal places), not the app's usual fixed 2-decimal
+  // fmt(). Matches examples like "4.88289", "0", "25.9454" (6 significant figures).
+  function eznecNum(v){
+    // az2xy() derives x/y via sin/cos of a radian angle, so a bearing like 90°
+    // or 180° lands on a value like 1.8e-15 instead of exactly 0 — snap
+    // anything below a sane real-world threshold (fractions of a micro-unit)
+    // down to exact zero rather than printing it in scientific notation.
+    if(Math.abs(v) < 1e-9) v = 0;
+    let n = Number(v.toPrecision(6));
+    if(Object.is(n, -0)) n = 0; // avoid printing "-0"
+    return String(n);
+  }
+
+  function padL(s,n){ s=String(s); return s.length>=n ? s : ' '.repeat(n-s.length)+s; }
+  function padR(s,n){ s=String(s); return s.length>=n ? s : s+' '.repeat(n-s.length); }
+
+  // Finds which other wire (if any) shares this exact endpoint, producing an
+  // EZNEC-style "W{n}E{1|2}" connection label, or '' if the endpoint is free
+  // (e.g. a feedpoint or an open wire tip). If 3+ wires share one point (a
+  // counterpoise fan's common feed point, say), this references only the
+  // first (lowest-numbered) match rather than listing every connected wire —
+  // EZNEC's own multi-way-junction display convention isn't something we can
+  // verify without EZNEC itself, so treat that case as best-effort.
+  function findConnection(wires, idx, point){
+    const eps = 1e-6;
+    for(let i=0;i<wires.length;i++){
+      if(i===idx) continue;
+      const w = wires[i];
+      if(Math.abs(w.from.x-point.x)<eps && Math.abs(w.from.y-point.y)<eps && Math.abs(w.from.z-point.z)<eps) return `W${i+1}E1`;
+      if(Math.abs(w.to.x-point.x)<eps && Math.abs(w.to.y-point.y)<eps && Math.abs(w.to.z-point.z)<eps) return `W${i+1}E2`;
+    }
+    return '';
+  }
+
+  // Trailing per-wire columns EZNEC always shows (Dia, Segs, insulation,
+  // wire loss) — fixed defaults per design decision, not user-editable.
+  const EZNEC_TRAIL = '#10   2           1        0        0        0       1';
+
+  function buildEznecExport(model){
+    const wires = model.wires;
+    const header1 = `No.            End 1     Coord. (${uLabel()})              End 2     Coord. (${uLabel()})       Dia (in)  Segs           Insulation                Wire Loss`;
+    const header2 = `          Conn.      X       Y       Z       Conn.      X       Y       Z                         Diel C  Thk(in) Loss Tan  Cond(S/m)  Perm`;
+    const lines = [header1, header2];
+    wires.forEach((w,i)=>{
+      const c1 = findConnection(wires, i, w.from);
+      const c2 = findConnection(wires, i, w.to);
+      const coord1 = `${padL(eznecNum(w.from.x),7)},${padL(eznecNum(w.from.y),7)},${padL(eznecNum(w.from.z),7)}`;
+      const coord2 = `${padL(eznecNum(w.to.x),7)},${padL(eznecNum(w.to.y),7)},${padL(eznecNum(w.to.z),7)}`;
+      lines.push(padR(String(i+1),4) + padL(c1,6) + '  ' + coord1 + padL(c2,8) + '  ' + coord2 + '      ' + EZNEC_TRAIL);
+    });
+    return lines.join('\n');
+  }
+
+  // MMANA's .maa format always stores X/Y/Z in meters regardless of the
+  // active display unit (there's no per-file unit field) — convert explicitly
+  // rather than assuming the app's current `unit`.
+  function toMeters(v){ return unit==='ft' ? v*0.3048 : v; }
+
+  // #10 AWG radius in meters — same assumed wire gauge as the EZNEC export's
+  // hardcoded "#10" Dia column, kept as one named constant so both exporters
+  // can't silently drift onto two different assumed gauges.
+  const WIRE_RADIUS_IN = 0.0509; // #10 AWG radius, inches
+  const WIRE_RADIUS_M = WIRE_RADIUS_IN * 0.0254;
+
+  const TYPE_LABELS = { sloper:'Straight Sloper', invv:'Inverted-V End-Fed', sag:'Sagging Sloper', counterpoise:'Counterpoise Fan' };
+
+  // Matches the MMANA-GAL .maa numeric style seen in real files: no forced
+  // decimal places beyond one (e.g. "13.0" not "13"), 6 significant figures,
+  // and floating-point noise near zero snapped to exact "0.0" (see eznecNum
+  // for why az2xy's sin/cos can produce e.g. 1.8e-15 instead of exact 0).
+  function mmanaNum(v){
+    if(Math.abs(v) < 1e-9) v = 0;
+    let n = Number(v.toPrecision(6));
+    if(Object.is(n, -0)) n = 0;
+    let s = String(n);
+    if(!s.includes('.') && !s.includes('e')) s += '.0';
+    return s;
+  }
+
+  function buildMmanaExport(model){
+    const wires = model.wires;
+    const lines = [];
+    lines.push(`${TYPE_LABELS[type]} — generated by Wire Antenna Geometry Calculator`);
+    lines.push('*');
+    lines.push(mmanaNum(mmanaFreq));
+    lines.push('***Wires***');
+    lines.push(String(wires.length));
+    wires.forEach(w=>{
+      // SEG (last field) is always a bare integer with no decimal point in
+      // real .maa files (e.g. "-1"), unlike every other field here which
+      // always shows at least one decimal (e.g. "0.0") — so it's appended
+      // separately rather than run through mmanaNum's "force a decimal" rule.
+      const coords = [
+        toMeters(w.from.x), toMeters(w.from.y), toMeters(w.from.z),
+        toMeters(w.to.x), toMeters(w.to.y), toMeters(w.to.z),
+        WIRE_RADIUS_M
+      ].map(mmanaNum).join(',\t');
+      lines.push(coords + ',\t-1');
+    });
+    // A source is placed at wire 1's beginning (the feed/attach point in every
+    // builder here) for all geometry types, including Counterpoise — though a
+    // counterpoise fan on its own isn't really a standalone radiator in
+    // practice (it's meant to attach to another antenna's feedpoint), giving
+    // it a nominal source keeps the file a valid, loadable NEC model on its
+    // own; delete it in MMANA if merging these wires into a larger model.
+    lines.push('*** Source ***');
+    lines.push('1,\t1');
+    lines.push('w1b,\t0.0,\t1.0');
+    // No loads modeled by any geometry type here.
+    lines.push('*** Load ***');
+    lines.push('0,\t1');
+    // Fixed defaults matching MMANA-GAL's own recommended tapering setup and
+    // the ground/pattern settings used identically across all of MMANA-GAL's
+    // bundled "HF simple" example files — not derived from geometry.
+    lines.push('*** Segmentation ***');
+    lines.push('400,\t40,\t2.0,\t1');
+    lines.push('*** G/H/M/R/AzEl/X ***');
+    lines.push('2,\t0.0,\t1,\t50.0,\t120,\t60,\t0.0');
+    // Real .maa files use CRLF line endings, but <textarea>.value is spec-required
+    // to normalize \r\n to \n (the HTML "API value" algorithm), so CRLF can't
+    // actually survive being placed in this export box — LF is the best
+    // achievable here regardless of what's requested.
+    return lines.join('\n');
+  }
+
+  function renderExport(model){
+    const ta = document.getElementById('wgcExport');
+    if(model.invalid){ ta.value = ''; return; }
+    if(exportFormat==='eznec') ta.value = buildEznecExport(model);
+    else if(exportFormat==='mmana') ta.value = buildMmanaExport(model);
+    else ta.value = buildGenericExport(model);
   }
 
   function renderSVGs(model){
@@ -757,6 +903,20 @@
     render();
   });
 
+  document.getElementById('exportFormatToggle').addEventListener('click', e=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    exportFormat = btn.dataset.format;
+    root.querySelectorAll('#exportFormatToggle button').forEach(b=>b.classList.toggle('active', b===btn));
+    renderOutputs();
+  });
+
+  document.getElementById('mmanaFreqInput').addEventListener('input', e=>{
+    const v = parseFloat(e.target.value);
+    if(!isNaN(v)) mmanaFreq = v;
+    renderOutputs();
+  });
+
   document.getElementById('wgcCopyBtn').addEventListener('click', ()=>{
     const ta = document.getElementById('wgcExport');
     ta.select();
@@ -772,7 +932,7 @@
   // (which loads this real file in an iframe rather than keeping a separate
   // copy, so tests can never drift out of sync with shipped behavior).
   // Purely additive — no effect on the app itself.
-  window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA };
+  window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA, findConnection, eznecNum, mmanaNum };
 
   render();
 })();
