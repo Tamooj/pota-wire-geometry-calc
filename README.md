@@ -1,19 +1,19 @@
 # POTA Wire Antenna Geometry Calculator
 
-A browser-based tool that turns field-measurable numbers — support height,
-distance to a tree, compass bearing, wire slack — into ready-to-paste 3D wire
+A browser-based tool that turns design or field-measurable numbers - pole height,
+distances to a tree, compass bearing, wire slack - into ready-to-paste 3D wire
 coordinates for **NEC-2 based antenna modeling software** (EZNEC, MMANA).
 
 ## What this is (and isn't)
 
 **This tool does not simulate antenna performance.** It doesn't compute gain,
-radiation pattern, SWR, or feedpoint impedance — that requires an
+radiation pattern, SWR, or feedpoint impedance - that requires an
 electromagnetic solver, which this is not.
 
 What it *does* do: take the geometry of a real-world random-wire install (a
 sloper to one tree, an inverted-V between two mismatched trees, a sagging
-wire, a counterpoise fan) and turn it into the X/Y/Z wire-endpoint coordinates
-that EZNEC or MMANA need as input — including the catenary math for a sagging
+wire, a counterpoise fan) and turn it into the table of X/Y/Z wire-endpoint coordinates
+that EZNEC or MMANA need as input - including the catenary math for a sagging
 wire, which is tedious to work out by hand.
 
 **In short: this feeds the modeling tools. You still run the actual
@@ -22,16 +22,17 @@ a replacement for them.
 
 ## Why this exists
 
-Ad hoc POTA (Parks on the Air) installations use random-wire antennas fed
-through a 9:1 unun. In the field, available trees and supports are never in
+Ad hoc installations using random-wire antennas, such as POTA (Parks on the Air) 
+can take many forms. In the field, available trees and supports are never in
 convenient positions, and setup happens under time and comfort pressure (heat,
 insects, daylight). It's much better to have a small library of pre-modeled
 "go-to" geometries worked out ahead of time than to improvise wire geometry
-on-site. This tool exists to make that pre-planning fast.
+on-site. This tool exists to make that pre-planning not be a tedious exercise 
+involving graph paper and trigonometry. 
 
 ## Try it
 
-Open [`index.html`](index.html) directly in any browser — no build step, no
+Download and open [`index.html`](index.html) directly in any browser - no build step, no
 dependencies, no server required. Or, if GitHub Pages is enabled for this
 repo, use the hosted version at:
 
