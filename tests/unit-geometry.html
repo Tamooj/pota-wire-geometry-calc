@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Unit tests — geometry math</title>
+</head>
+<body style="font-family: sans-serif; padding: 16px;">
+  <h2 style="font-family:monospace;">Wire Geometry Calculator — unit tests (geometry math)</h2>
+  <p style="font-family:monospace; font-size:12px; color:#555; max-width:640px;">
+    Loads the real <code>../index.html</code> in a hidden iframe and calls its
+    exposed <code>window.WGC</code> pure functions directly, rather than
+    keeping a separate copy of the math — so these tests can never silently
+    drift out of sync with what's actually shipped.
+  </p>
+  <iframe id="app" src="../index.html" style="display:none;"></iframe>
+  <div id="results">Loading…</div>
+
+  <script src="harness.js"></script>
+  <script>
+    document.getElementById('app').addEventListener('load', () => {
+      const WGC = document.getElementById('app').contentWindow.WGC;
+
+      suite('buildSloper');
+      test('3-4-5 right triangle — wire length and elevation angle', () => {
+        const m = WGC.buildSloper({ az: 90, z1: 0, z2: 40, dist: 30 });
+        const wireLen = m.summary.find(s => s[0] === 'Wire length')[1];
+        const elev = m.summary.find(s => s[0] === 'Elevation angle')[1];
+        assert.close(wireLen, 50, 1e-9);
+        assert.close(elev, 53.13010235415598, 1e-9);
+      });
+      test('far end lands at the expected E/N offset for az=90 (east)', () => {
+        const m = WGC.buildSloper({ az: 90, z1: 0, z2: 40, dist: 30 });
+        const far = m.points.find(p => p.label === 'Far end');
+        assert.close(far.x, 30, 1e-9);
+        assert.close(far.y, 0, 1e-9);
+        assert.close(far.z, 40, 1e-9);
+      });
+
+      suite('buildInvV');
+      test('symmetric collinear V — both legs come out equal length', () => {
+        const m = WGC.buildInvV({ azApex: 90, zApex: 30, z1: 0, d1: 20, az2: 270, z2: 0, d2: 20 });
+        const len1 = m.summary.find(s => s[0] === 'Leg 1 length')[1];
+        const len2 = m.summary.find(s => s[0] === 'Leg 2 length')[1];
+        assert.close(len1, Math.sqrt(20 * 20 + 30 * 30), 1e-9);
+        assert.close(len2, len1, 1e-9);
+      });
+      test('legs are independent — a strongly bent V is not forced collinear', () => {
+        const m = WGC.buildInvV({ azApex: 90, zApex: 30, z1: 0, d1: 20, az2: 20, z2: 5, d2: 15 });
+        const feed = m.points.find(p => p.label === 'Feed');
+        const far = m.points.find(p => p.label === 'Far end');
+        // az2 (20°) is nowhere near azApex+180 (270°): a collinear V would put
+        // feed/far in opposite directions (negative dot product); a bent V
+        // with az2 this far off should not.
+        const dot = feed.x * far.x + feed.y * far.y;
+        assert.isTrue(dot > 0, `expected feed/far-end to point into the same half-plane for a bent V, got dot=${dot}`);
+      });
+
+      suite('solveCatenaryA — governing relation s²-h² = 4a²sinh²(l/2a)');
+      test('normal slack case satisfies the governing relation', () => {
+        const l = 30, h = 22, s = 40;
+        const a = WGC.solveCatenaryA(l, h, s);
+        const lhs = 4 * a * a * Math.sinh(l / (2 * a)) * Math.sinh(l / (2 * a));
+        assert.close(lhs, s * s - h * h, 1e-6 * (s * s - h * h));
+      });
+      test('near-zero slack still solves to a finite value (bisection-bound regression guard)', () => {
+        const l = 100, h = 0, s = 100.0001; // barely more than the straight-line distance
+        const a = WGC.solveCatenaryA(l, h, s);
+        assert.isTrue(isFinite(a) && a > 0, `expected a finite positive catenary parameter, got ${a}`);
+        const lhs = 4 * a * a * Math.sinh(l / (2 * a)) * Math.sinh(l / (2 * a));
+        assert.close(lhs, s * s - h * h, 1e-3 * (s * s - h * h));
+      });
+
+      suite('buildSag');
+      test('valid case returns 11 waypoints / 10 segments, endpoints match feed/anchor heights', () => {
+        const m = WGC.buildSag({ az: 90, z1: 4, z2: 26, dist: 30, wireLen: 40 });
+        assert.equal(m.invalid, undefined);
+        assert.equal(m.points.length, 11);
+        assert.equal(m.wires.length, 10);
+        assert.close(m.points[0].z, 4, 1e-6);
+        assert.close(m.points[10].z, 26, 1e-6);
+      });
+      test('wire shorter than straight-line distance is flagged invalid', () => {
+        const m = WGC.buildSag({ az: 90, z1: 4, z2: 26, dist: 30, wireLen: 30 });
+        assert.isTrue(m.invalid);
+        assert.isAbove(m.straight, 30);
+      });
+
+      suite('buildCounterpoise — 360° spread bug fix');
+      test('spread=360, n=4 gives four DISTINCT, evenly-spaced (90°) bearings', () => {
+        const m = WGC.buildCounterpoise({ n: 4, len: 25, zAttach: 1, zEnd: 0, centerAz: 270, spread: 360 });
+        const ends = m.points.filter(p => p.label !== 'Feed/attach');
+        assert.equal(ends.length, 4);
+        for (let i = 0; i < ends.length; i++) {
+          for (let j = i + 1; j < ends.length; j++) {
+            const d = Math.hypot(ends[i].x - ends[j].x, ends[i].y - ends[j].y);
+            assert.isAbove(d, 1, `radials ${i} and ${j} should not coincide, got distance ${d}`);
+          }
+        }
+        const angles = ends
+          .map(p => (Math.atan2(p.x, p.y) * 180 / Math.PI + 360) % 360)
+          .sort((a, b) => a - b);
+        [0, 90, 180, 270].forEach((expected, i) => assert.close(angles[i], expected, 1e-6));
+      });
+      test('partial spread (140°, n=4) is unaffected by the full-circle fix', () => {
+        const m = WGC.buildCounterpoise({ n: 4, len: 25, zAttach: 1, zEnd: 0, centerAz: 270, spread: 140 });
+        const ends = m.points.filter(p => p.label !== 'Feed/attach');
+        const angles = ends
+          .map(p => (Math.atan2(p.x, p.y) * 180 / Math.PI + 360) % 360)
+          .sort((a, b) => a - b);
+        assert.close(angles[angles.length - 1] - angles[0], 140, 1e-6);
+      });
+      test('n=1 always places the single radial at centerAz regardless of spread', () => {
+        const m = WGC.buildCounterpoise({ n: 1, len: 25, zAttach: 1, zEnd: 0, centerAz: 45, spread: 360 });
+        const end = m.points.find(p => p.label !== 'Feed/attach');
+        const angle = (Math.atan2(end.x, end.y) * 180 / Math.PI + 360) % 360;
+        assert.close(angle, 45, 1e-6);
+      });
+
+      window.runTests();
+    });
+  </script>
+</body>
+</html>

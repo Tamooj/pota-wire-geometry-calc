@@ -1,6 +1,6 @@
 # Wire Antenna Geometry Calculator — Design Doc
 
-**Status:** v1, functional
+**Status:** v1.1 — three known bugs from v1 fixed and covered by tests (see [tests/](../tests/))
 **Artifact:** [`index.html`](../index.html) (single-file, vanilla JS, no build step)
 **Purpose:** Generate EZNEC/MMANA-ready wire coordinates for field-deployable POTA antenna geometries, ahead of time, so geometry doesn't get worked out on-site.
 
@@ -77,14 +77,14 @@ C = z1 - a * cosh(x_v / a)
 
 **Output:** 11 waypoints (10 segments), stepped evenly in **horizontal x**, not arc length. This is a deliberate simplification — for realistic sag magnitudes on typical POTA spans, even horizontal stepping gives adequately uniform segment lengths for NEC modeling purposes, and it avoids the added complexity of arc-length parametrization (which requires inverting the arc-length integral — solvable but not yet justified by the accuracy gain). **Flagged as a candidate refinement if used for very short/steep verticals where segment non-uniformity would become significant** (see Section 5).
 
-> Numerical note: `solveCatenaryA`'s bisection bounds (`lo = 1e-6*l`, `hi = 1000*l`) are not validated against the root-bracketing precondition before iterating. Near the boundary where slack is very small (wire only slightly longer than the straight-line distance), `a` grows very large and `hi` may not actually bracket the true root — worth a guard/assert if this tool sees heavy use near that edge case.
+> **Fixed (v1.1):** `solveCatenaryA`'s bisection bounds were not validated against the root-bracketing precondition before iterating. Near the boundary where slack is very small (wire only slightly longer than the straight-line distance), `a` grows very large and the old fixed `hi = 1000*l` bound could fail to bracket the true root. `hi` is now doubled in a loop until `f(hi) < 0` actually holds before bisecting. Covered by the "near-zero slack" test in [tests/unit-geometry.html](../tests/unit-geometry.html).
 
 **Why this matters physically:** a two-point straight-line model of a drooping wire misrepresents current distribution geometry — the actual wire is longer than the chord and takes a different path through space, which affects feedpoint impedance and pattern, especially as sag becomes electrically significant at higher frequencies.
 
 ### 3.4 Counterpoise Fan
 N radials fanned evenly across a configurable total spread angle, centered on a chosen azimuth, all sharing a single attach point (which may differ in height from the main antenna feedpoint — e.g., a ground stake near the base of a mast). Straight/taut, no sag modeling. Supports both on-ground (`z_end = 0`) and elevated counterpoise configurations.
 
-> **Known issue:** at `spread = 360`, the fan-angle formula `spread/(n-1)` causes the first and last radial to land on the same bearing (they're 360° apart, i.e. identical), rather than producing an even N-way star. E.g. `n=4, spread=360` currently produces bearings at 0°/120°/240°/360°(=0°) — an effective 3-way spacing with a duplicated radial, not 4 radials at 90°. The fix is to special-case full-circle spread (`spread % 360 === 0`) and divide by `n` instead of `n-1`. Filed as a follow-up rather than fixed in v1 — see Section 5.
+> **Fixed (v1.1):** at `spread = 360`, the fan-angle formula `spread/(n-1)` used to cause the first and last radial to land on the same bearing (they're 360° apart, i.e. identical), rather than producing an even N-way star — e.g. `n=4, spread=360` produced bearings at 0°/120°/240°/360°(=0°), an effective 3-way spacing with a duplicated radial instead of 4 radials at 90°. Full-circle spread (`spread === 360`) now divides by `n` instead of `n-1`. Covered by the "360° spread bug fix" tests in both [tests/unit-geometry.html](../tests/unit-geometry.html) and [tests/system-app.html](../tests/system-app.html).
 
 ---
 
@@ -92,11 +92,14 @@ N radials fanned evenly across a configurable total spread angle, centered on a 
 
 - **Single HTML file**, no external JS framework — vanilla DOM manipulation, inline SVG for diagrams. Chosen over React for this tool because the interaction model is simple (form inputs → recompute → re-render) and doesn't benefit from component state management overhead.
 - **State model:** one JS object per geometry type (`state.sloper`, `state.invv`, `state.sag`, `state.counterpoise`), holding all parameters for that type independently — switching tabs doesn't lose your work on another tab.
-- **Render pipeline:** single `render()` function called after any input change or tab/unit switch. Rebuilds: input field HTML → geometry model (points + wires + summary stats) → coordinate table → plain-text export → both SVG diagrams. Not optimized for performance (full re-render each time) — fine at this scale (≤~15 DOM nodes worth of geometry), would need targeted updates if the tool grows substantially more complex.
+- **Render pipeline (v1.1):** split into `renderInputs()` (rebuilds the `#wgcInputs` panel HTML — only called on tab switch, unit toggle, and initial load) and `renderOutputs()` (table, summary, sag warning, export, SVGs — called on every slider `input` event). `render()` just calls both, for the tab/unit/init call sites.
 
-  > **Known issue:** because `render()` rebuilds the entire `#wgcInputs` panel HTML on every `input` event, dragging a range slider replaces that slider's own DOM node on every tick of the drag — in some browsers this can interrupt/jank an in-progress drag gesture. Splitting `render()` into a `renderInputs()` (run once, on tab/unit switch) and `renderOutputs()` (table/summary/export/SVGs/labels, run on every input tick) would fix this and is a good first refactor for a v1.1.
-- **Geometry builders** (`buildSloper`, `buildInvV`, `buildSag`, `buildCounterpoise`) each return a common shape: `{ points: [...], wires: [...], summary: [...] }` — this common interface is what makes the table/export/SVG renderers type-agnostic. **Any new geometry type should conform to this same return shape** to slot into the existing render pipeline without touching the renderers.
-- **Unit conversion:** `convertAllUnits()` walks a per-type list of "length-valued" parameter keys and rescales them on toggle; angle/count parameters are excluded by not being in that list. New parameters added to any type must be added to the appropriate list in this function if they represent a length, or they'll silently fail to convert.
+  > **Fixed (v1.1):** previously a single `render()` rebuilt the entire `#wgcInputs` panel HTML on every `input` event, which replaced a slider's own DOM node on every tick of a drag — in some browsers this can interrupt/jank an in-progress drag gesture. Because `renderOutputs()` never touches `#wgcInputs`, dragging a slider can no longer destroy the element the user is actively dragging. Covered by the "Slider-drag render (jank fix)" test in [tests/system-app.html](../tests/system-app.html), which asserts the same DOM node survives multiple `input` events.
+- **Geometry builders** (`buildSloper`, `buildInvV`, `buildSag`, `buildCounterpoise`) are pure functions of a passed-in state slice (`buildSloper(state.sloper)`, etc.) returning a common shape: `{ points: [...], wires: [...], summary: [...] }`, where each summary entry is `[label, rawNumericValue, kind]` (`kind` is `'length' | 'angle' | 'count' | 'raw'`) rather than a pre-formatted unit-suffixed string — `renderSummary()`/`formatSummaryValue()` apply the current unit/decimal formatting at render time. This decoupling (added in v1.1) is what makes the builders testable in isolation: a test can call `buildCounterpoise({ n:4, spread:360, ... })` directly with arbitrary inputs instead of only ever reading live `state`. **Any new geometry type should conform to this same return shape** to slot into the existing render pipeline without touching the renderers.
+- **Testability hook:** `window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA }` is set near the end of the script — purely additive, no effect on the app. [tests/unit-geometry.html](../tests/unit-geometry.html) loads the real `index.html` in an iframe and calls these directly, so tests can never drift from what's actually shipped (see Section 7).
+- **Unit conversion:** `lengthFieldSpecs` (feet-based `[min, max, step]` per length field) is now the single source of truth for both slider bounds (via `lenField()`/`lenRange()`) and `convertAllUnits()` — previously these lived in two separate places (slider bounds hardcoded in `fieldsHTML()`, conversion keys in a separate list in `convertAllUnits()`) and could drift; a field added to only one would either fail to convert or fail to get a unit-scaled slider range.
+
+  > **Fixed (v1.1):** slider `min`/`max`/`step` used to stay in feet-scale numbers even after toggling to meters (e.g. `step="1"` unchanged), so a converted value like `10.668 m` would get silently snapped by the browser to the nearest whole step — `11`. Slider bounds are now scaled by `lenRange()` to the active unit, and `convertAllUnits()` snaps the converted value exactly onto the new unit's step grid (via `roundToStep()`) instead of an arbitrary fixed-decimal rounding, so the browser never needs to re-snap it. Covered by the "regression guard" tests in the Unit toggle suite of [tests/system-app.html](../tests/system-app.html) — this bug was actually caught *by* writing that test, not by manual review.
 
 ---
 
@@ -105,19 +108,32 @@ N radials fanned evenly across a configurable total spread angle, centered on a 
 Roughly in order of likely value for future sessions:
 
 1. **Native format export** — generate actual EZNEC `.ez` or NEC-2 `.nec` deck syntax (GW cards with wire radius/segmentation) rather than a generic paste table. Would remove a manual transcription step.
-2. **Counterpoise 360° spread bug** — fix the `spread/(n-1)` vs `spread/n` wraparound issue described in 3.4. Small, isolated fix.
-3. **Render performance / slider jank** — split `render()` into input-panel-render and output-render as described in Section 4, so dragging a slider doesn't rebuild its own DOM node on every tick.
-4. **Saved presets/scenario library** — persist named configurations (e.g., "Site A — pecan tree sloper", "Site B — inverted V") so the pre-planned "go-to geometries" from the original requirement can actually be stored and recalled, not just computed fresh each session. Given this is now a standalone repo/static page rather than a claude.ai artifact, this belongs as `localStorage`-backed presets (and/or exportable/importable JSON scenario files) rather than the artifact persistent-storage API.
-5. **Numeric input alongside sliders** — the CSS already has an (currently unused) `input[type="number"]` style; pairing a synced number field with each range slider would allow precise entry (e.g. dialing in an exact compass bearing) instead of drag-only.
-6. **Sag modeling for inverted-V legs and counterpoise radials** — currently only the dedicated "Sagging Sloper" tab models catenary droop; the same math could apply to inverted-V legs (which also sag in practice) and elevated counterpoise runs.
-7. **Arc-length-uniform waypoint stepping** for the catenary case, if segment uniformity becomes a real accuracy concern for steep/short spans.
-8. **Wire diameter / segmentation guidance** — currently coordinates only; could add a recommended NEC segment count per wire based on frequency (segments should be well under 0.1λ at the highest frequency of interest) and a default wire radius field for direct GW-card generation (ties into item 1).
-9. **Ground/counterpoise coupling check** — a sanity warning if counterpoise radials and main wire geometry pass too close to each other (risk of unintended coupling not represented in a simple wire-geometry tool).
-10. **Multi-band segment-count validation** — warn if a given wire length modeled with only 1-2 segments would be too coarse at the user's intended operating frequency.
+2. **Saved presets/scenario library** — persist named configurations (e.g., "Site A — pecan tree sloper", "Site B — inverted V") so the pre-planned "go-to geometries" from the original requirement can actually be stored and recalled, not just computed fresh each session. Given this is now a standalone repo/static page rather than a claude.ai artifact, this belongs as `localStorage`-backed presets (and/or exportable/importable JSON scenario files) rather than the artifact persistent-storage API.
+3. **Numeric input alongside sliders** — the CSS already has an (currently unused) `input[type="number"]` style; pairing a synced number field with each range slider would allow precise entry (e.g. dialing in an exact compass bearing) instead of drag-only.
+4. **Sag modeling for inverted-V legs and counterpoise radials** — currently only the dedicated "Sagging Sloper" tab models catenary droop; the same math could apply to inverted-V legs (which also sag in practice) and elevated counterpoise runs.
+5. **Arc-length-uniform waypoint stepping** for the catenary case, if segment uniformity becomes a real accuracy concern for steep/short spans.
+6. **Wire diameter / segmentation guidance** — currently coordinates only; could add a recommended NEC segment count per wire based on frequency (segments should be well under 0.1λ at the highest frequency of interest) and a default wire radius field for direct GW-card generation (ties into item 1).
+7. **Ground/counterpoise coupling check** — a sanity warning if counterpoise radials and main wire geometry pass too close to each other (risk of unintended coupling not represented in a simple wire-geometry tool).
+8. **Multi-band segment-count validation** — warn if a given wire length modeled with only 1-2 segments would be too coarse at the user's intended operating frequency.
+
+All bugs and cleanups previously tracked here (counterpoise 360° spread, slider-render jank, catenary bisection bounds, dead code, unit-conversion snapping) were fixed in v1.1 — see Section 4 for what changed and Section 7 for how it's tested.
 
 ---
 
 ## 6. File Reference
 
-- [`index.html`](../index.html) — the tool itself, self-contained, opens in any browser or serves directly via GitHub Pages.
-- This document — the design record, so rationale (especially the catenary derivation, the "why not collinear" decision on the inverted-V, and the known issues above) doesn't have to be re-derived from reading code alone. Keep it in sync with `index.html` as the tool evolves.
+- [`index.html`](../index.html) — the tool itself, self-contained, opens in any browser or serves directly via GitHub Pages. Still a single file — the `window.WGC` testability hook is the only thing added for tests, and it's inert for normal use.
+- [`tests/`](../tests/) — unit and system tests; see Section 7.
+- This document — the design record, so rationale (especially the catenary derivation, the "why not collinear" decision on the inverted-V) doesn't have to be re-derived from reading code alone. Keep it in sync with `index.html` as the tool evolves.
+
+---
+
+## 7. Testing
+
+No build step, no npm dependency, matching the artifact itself — tests are plain HTML pages you open in a browser.
+
+- **[tests/harness.js](../tests/harness.js)** — ~70-line hand-rolled `suite()`/`test()`/`assert` framework shared by both test pages, rendering a pass/fail dashboard into the page.
+- **[tests/unit-geometry.html](../tests/unit-geometry.html)** — loads the real `../index.html` in a hidden iframe and calls its exposed `window.WGC` pure functions directly (no copied/duplicated source, so tests can't silently drift from shipped behavior, unlike q-primer's copy-into-test-file pattern). Covers the sloper/inverted-V math, the catenary governing relation (including the near-zero-slack edge case), and the counterpoise 360° spread fix.
+- **[tests/system-app.html](../tests/system-app.html)** — loads the real `../index.html` in a visible iframe and drives it like a user (clicking tabs, dispatching real `input` events on sliders) then inspects the resulting DOM. Covers tab switching, the slider-drag jank fix (asserts the same DOM node survives a drag), sag-warning reactivity, the counterpoise fix through the real export pipeline, and unit-toggle conversion (including a regression guard for the slider-snapping bug above).
+
+**To run:** open either file directly in a browser, or serve the repo root with `python -m http.server` and open `http://localhost:8000/tests/unit-geometry.html` (a plain `file://` open works in most browsers too, but some restrict script access across `file://` iframe boundaries — serving avoids that). Results render on the page; `window.__TEST_SUMMARY__` holds a `{total, passed, failed}` object for automated checking.

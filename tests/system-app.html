@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>System tests — full app</title>
+</head>
+<body style="font-family: sans-serif; padding: 16px;">
+  <h2 style="font-family:monospace;">Wire Geometry Calculator — system tests (real DOM, real events)</h2>
+  <p style="font-family:monospace; font-size:12px; color:#555; max-width:640px;">
+    Loads the real <code>../index.html</code> in an iframe and drives it like
+    a user would — clicking tabs, dragging sliders (dispatching real
+    <code>input</code> events) — then inspects the resulting DOM. If this page
+    was opened directly via <code>file://</code> and the iframe below stays
+    blank/fails to load, serve the repo instead
+    (<code>python -m http.server</code> from the repo root, then open
+    <code>http://localhost:8000/tests/system-app.html</code>) — some browsers
+    restrict script access across <code>file://</code> iframe boundaries.
+  </p>
+  <iframe id="app" src="../index.html" style="width:900px; height:500px; border:1px solid #ccc;"></iframe>
+  <div id="results" style="margin-top:16px;">Loading…</div>
+
+  <script src="harness.js"></script>
+  <script>
+    function setSlider(doc, grp, key, value) {
+      const inp = doc.querySelector(`input[data-grp="${grp}"][data-key="${key}"]`);
+      if (!inp) throw new Error(`slider not found: ${grp}.${key}`);
+      inp.value = value;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      return inp;
+    }
+    function getSlider(doc, grp, key) {
+      return doc.querySelector(`input[data-grp="${grp}"][data-key="${key}"]`);
+    }
+    function clickTab(doc, type) {
+      doc.querySelector(`#wgcTabs [data-type="${type}"]`).click();
+    }
+
+    document.getElementById('app').addEventListener('load', () => {
+      const win = document.getElementById('app').contentWindow;
+      const doc = win.document;
+
+      suite('Tab switching');
+      test('clicking a tab swaps the parameter panel to that geometry type', () => {
+        clickTab(doc, 'invv');
+        assert.isTrue(doc.getElementById('wgcInputs').textContent.includes('Apex'), 'expected inverted-V fields (Apex) to appear');
+        clickTab(doc, 'sloper'); // back to default for subsequent tests
+      });
+
+      suite('Slider-drag render (jank fix)');
+      test('dragging a slider does not replace its own DOM node', () => {
+        const before = getSlider(doc, 'sloper', 'az');
+        setSlider(doc, 'sloper', 'az', 45);
+        setSlider(doc, 'sloper', 'az', 200);
+        const after = getSlider(doc, 'sloper', 'az');
+        assert.isTrue(before === after, 'expected the same range-input DOM node to survive multiple input events (no full inputs-panel rebuild mid-drag)');
+      });
+      test('but the outputs (table/summary/export) still update on drag', () => {
+        setSlider(doc, 'sloper', 'az', 90);
+        setSlider(doc, 'sloper', 'dist', 30);
+        const exportBefore = doc.getElementById('wgcExport').value;
+        setSlider(doc, 'sloper', 'dist', 100);
+        const exportAfter = doc.getElementById('wgcExport').value;
+        assert.notEqual(exportBefore, exportAfter, 'expected the export text to change after dragging a geometry-affecting slider');
+      });
+
+      suite('Sag warning reactivity');
+      test('warning appears/disappears live while dragging wireLen, without switching tabs', () => {
+        clickTab(doc, 'sag');
+        setSlider(doc, 'sag', 'dist', 30);
+        setSlider(doc, 'sag', 'z1', 4);
+        setSlider(doc, 'sag', 'z2', 26); // straight-line distance ≈ 37.2
+        setSlider(doc, 'sag', 'wireLen', 5); // well under straight-line distance
+        assert.isTrue(!!doc.querySelector('#wgcSagWarn .wgc-warn'), 'expected a warning for wire shorter than straight-line distance');
+        setSlider(doc, 'sag', 'wireLen', 60); // comfortably over
+        assert.isTrue(!doc.querySelector('#wgcSagWarn .wgc-warn'), 'expected the warning to clear once wireLen is valid again');
+        clickTab(doc, 'sloper');
+      });
+
+      suite('Counterpoise 360° spread fix (through the real UI + export pipeline)');
+      test('n=4, spread=360 produces 4 distinct radial endpoints in the export text', () => {
+        clickTab(doc, 'counterpoise');
+        setSlider(doc, 'counterpoise', 'n', 4);
+        setSlider(doc, 'counterpoise', 'spread', 360);
+        const exportText = doc.getElementById('wgcExport').value;
+        const radialLines = exportText.split('\n').filter(l => /^R\d+\t/.test(l));
+        assert.equal(radialLines.length, 4);
+        const endpoints = radialLines.map(l => l.split('\t').slice(4, 6).join(','));
+        const distinct = new Set(endpoints);
+        assert.equal(distinct.size, 4, `expected 4 distinct radial endpoints, got ${JSON.stringify(endpoints)}`);
+        clickTab(doc, 'sloper');
+      });
+
+      suite('Unit toggle');
+      test('feet -> meters -> feet round-trips a slider value within rounding tolerance', () => {
+        setSlider(doc, 'sloper', 'dist', 35);
+        doc.querySelector('#unitToggle [data-unit="m"]').click();
+        const metersVal = parseFloat(getSlider(doc, 'sloper', 'dist').value);
+        assert.close(metersVal, 35 * 0.3048, 0.01);
+        doc.querySelector('#unitToggle [data-unit="ft"]').click();
+        const feetVal = parseFloat(getSlider(doc, 'sloper', 'dist').value);
+        assert.close(feetVal, 35, 0.05);
+      });
+      test('converted value does not snap to a whole unit on next render (slider-step regression guard)', () => {
+        setSlider(doc, 'sloper', 'dist', 35);
+        doc.querySelector('#unitToggle [data-unit="m"]').click();
+        const metersVal = parseFloat(getSlider(doc, 'sloper', 'dist').value);
+        // The original bug: a hardcoded step=1 slider silently snapped 10.668 m to 11.
+        assert.close(metersVal, 10.668, 0.01);
+        doc.querySelector('#unitToggle [data-unit="ft"]').click();
+      });
+      test('label text after a unit toggle is a clean number, not floating-point noise', () => {
+        setSlider(doc, 'sloper', 'dist', 35);
+        doc.querySelector('#unitToggle [data-unit="m"]').click();
+        const labelText = doc.getElementById('lbl_sloper_dist').textContent;
+        assert.equal(labelText, '10.67 m', `expected a clean fmt()-rounded label, got "${labelText}"`);
+        doc.querySelector('#unitToggle [data-unit="ft"]').click();
+      });
+
+      window.runTests();
+    });
+  </script>
+</body>
+</html>

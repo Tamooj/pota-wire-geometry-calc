@@ -343,12 +343,22 @@
   const state = {
     sloper: { az:90, z1:4, z2:28, dist:35 },
     invv:   { azApex:90, zApex:32, z1:4, d1:22, az2:270, z2:6, d2:18 },
-    sag:    { az:90, z1:4, z2:26, dist:30, wireLen:36 },
+    sag:    { az:90, z1:4, z2:26, dist:30, wireLen:40 },
     counterpoise: { n:4, len:25, zAttach:1, zEnd:0, centerAz:270, spread:140 }
   };
 
-  function toM(v){ return unit==='ft' ? v*0.3048 : v; }
-  function fromM(v){ return unit==='ft' ? v/0.3048 : v; }
+  // Single source of truth for every length-valued field's slider range,
+  // expressed in feet — used both to render unit-aware slider bounds and to
+  // drive unit conversion, so there's only one place to update when adding a
+  // new length field (previously bounds lived in fieldsHTML while the
+  // conversion key list lived separately in convertAllUnits, and could drift).
+  const lengthFieldSpecs = {
+    sloper: { z1:[0,50,0.5], z2:[1,80,0.5], dist:[1,150,1] },
+    invv: { zApex:[3,80,0.5], z1:[0,20,0.5], d1:[1,100,1], z2:[0,20,0.5], d2:[1,100,1] },
+    sag: { z1:[0,50,0.5], z2:[1,80,0.5], dist:[1,150,1], wireLen:[1,200,0.5] },
+    counterpoise: { len:[1,100,1], zAttach:[0,10,0.25], zEnd:[0,10,0.25] }
+  };
+
   function uLabel(){ return unit==='ft' ? 'ft' : 'm'; }
   function fmt(v){ return (Math.round(v*100)/100).toFixed(2); }
 
@@ -357,44 +367,61 @@
     return { x: r*Math.sin(rad), y: r*Math.cos(rad) };
   }
 
+  // Scales a [min,max,step] triple (specified in feet) into the current unit.
+  function lenRange(minFt, maxFt, stepFt){
+    const f = unit==='ft' ? 1 : 0.3048;
+    return [minFt*f, maxFt*f, stepFt*f];
+  }
+
+  function roundToStep(value, min, step){
+    return min + Math.round((value-min)/step)*step;
+  }
+
+  // A length-valued slider field, with min/max/step looked up from
+  // lengthFieldSpecs and scaled to the current unit — this is what keeps a
+  // slider's step granularity from silently snapping a converted value to
+  // the nearest whole unit (e.g. 10.67 m snapping to 11) after a toggle.
+  function lenField(grp, key, label, val){
+    const [min,max,step] = lenRange(...lengthFieldSpecs[grp][key]);
+    return numField(grp, key, label, val, min, max, step, uLabel(), fmt(val));
+  }
+
   // ---------- Field definitions per type ----------
   function fieldsHTML(){
     if(type==='sloper'){
       const s = state.sloper;
       return `
         ${numField('sloper','az','Azimuth to far end (° from N)', s.az, 0,360,1,'')}
-        ${numField('sloper','z1','Feed height', s.z1, 0,50,0.5,uLabel())}
-        ${numField('sloper','z2','Support height (far end)', s.z2, 1,80,0.5,uLabel())}
-        ${numField('sloper','dist','Horizontal distance to support', s.dist, 1,150,1,uLabel())}
+        ${lenField('sloper','z1','Feed height', s.z1)}
+        ${lenField('sloper','z2','Support height (far end)', s.z2)}
+        ${lenField('sloper','dist','Horizontal distance to support', s.dist)}
         <div class="wgc-hint">Wire length and elevation angle are derived. Use for a wire run straight to one tree/mast — no sag modeled (assume reasonably taut).</div>
       `;
     }
     if(type==='invv'){
       const s = state.invv;
       return `
-        ${numField('invv','zApex','Apex (mast) height', s.zApex, 3,80,0.5,uLabel())}
+        ${lenField('invv','zApex','Apex (mast) height', s.zApex)}
         <div class="wgc-hint" style="margin-bottom:8px;">— Leg 1 (feed end) —</div>
         ${numField('invv','azApex','Azimuth, apex→feed (° from N)', s.azApex, 0,360,1,'')}
-        ${numField('invv','z1','Feed height', s.z1, 0,20,0.5,uLabel())}
-        ${numField('invv','d1','Horizontal dist, apex→feed', s.d1, 1,100,1,uLabel())}
+        ${lenField('invv','z1','Feed height', s.z1)}
+        ${lenField('invv','d1','Horizontal dist, apex→feed', s.d1)}
         <div class="wgc-hint" style="margin-bottom:8px;">— Leg 2 (far end) —</div>
         ${numField('invv','az2','Azimuth, apex→far end (° from N)', s.az2, 0,360,1,'')}
-        ${numField('invv','z2','Far-end height', s.z2, 0,20,0.5,uLabel())}
-        ${numField('invv','d2','Horizontal dist, apex→far end', s.d2, 1,100,1,uLabel())}
+        ${lenField('invv','z2','Far-end height', s.z2)}
+        ${lenField('invv','d2','Horizontal dist, apex→far end', s.d2)}
         <div class="wgc-hint">Legs need not be collinear — set az2 ≠ azApex+180 for a bent V between two mismatched trees. Straight legs, no sag.</div>
       `;
     }
     if(type==='sag'){
       const s = state.sag;
-      const straight = Math.sqrt(s.dist*s.dist + (s.z2-s.z1)*(s.z2-s.z1));
-      const warn = s.wireLen <= straight ? `<div class="wgc-warn">Wire length must exceed the straight-line distance (${fmt(straight)} ${uLabel()}) or there's no slack to sag. Increase wire length.</div>` : '';
       return `
         ${numField('sag','az','Azimuth to anchor (° from N)', s.az, 0,360,1,'')}
-        ${numField('sag','z1','Feed height', s.z1, 0,50,0.5,uLabel())}
-        ${numField('sag','z2','Anchor height', s.z2, 1,80,0.5,uLabel())}
-        ${numField('sag','dist','Horizontal distance to anchor', s.dist, 1,150,1,uLabel())}
-        ${numField('sag','wireLen','Actual wire length (slack included)', s.wireLen, 1,200,0.5,uLabel())}
-        ${warn}
+        ${lenField('sag','z1','Feed height', s.z1)}
+        ${lenField('sag','z2','Anchor height', s.z2)}
+        ${lenField('sag','dist','Horizontal distance to anchor', s.dist)}
+        ${lenField('sag','wireLen','Actual wire length (slack included)', s.wireLen)}
+        <div id="wgcSagWarn"></div>
         <div class="wgc-hint">Models real catenary droop from excess wire length beyond the taut straight-line distance. Outputs 11 waypoints along the curve for a multi-segment NEC wire.</div>
       `;
     }
@@ -402,9 +429,9 @@
       const s = state.counterpoise;
       return `
         ${numField('counterpoise','n','Number of radials', s.n, 1,12,1,'')}
-        ${numField('counterpoise','len','Radial length', s.len, 1,100,1,uLabel())}
-        ${numField('counterpoise','zAttach','Height at feed/attach point', s.zAttach, 0,10,0.25,uLabel())}
-        ${numField('counterpoise','zEnd','Height at radial ends (0 = on ground)', s.zEnd, 0,10,0.25,uLabel())}
+        ${lenField('counterpoise','len','Radial length', s.len)}
+        ${lenField('counterpoise','zAttach','Height at feed/attach point', s.zAttach)}
+        ${lenField('counterpoise','zEnd','Height at radial ends (0 = on ground)', s.zEnd)}
         ${numField('counterpoise','centerAz','Fan center azimuth (° from N)', s.centerAz, 0,360,1,'')}
         ${numField('counterpoise','spread','Fan spread (total angle)', s.spread, 0,360,5,'°')}
         <div class="wgc-hint">Radials fan evenly across the spread, centered on the azimuth. Spread=360 with N radials gives an even star pattern. Straight radials, no sag.</div>
@@ -412,11 +439,17 @@
     }
   }
 
-  function numField(grp, key, label, val, min, max, step, suffix){
+  // `displayVal` lets callers show a rounded label (e.g. lenField uses fmt())
+  // while the slider's own `value` still gets the precise, step-aligned
+  // number — cleaned of floating-point noise digits (via toFixed(6), still
+  // far finer than any slider step) without losing the precision that
+  // step-alignment depends on.
+  function numField(grp, key, label, val, min, max, step, suffix, displayVal){
+    const shown = displayVal===undefined ? val : displayVal;
     return `
       <div class="wgc-field">
-        <label>${label} <span class="wgc-val" id="lbl_${grp}_${key}">${val}${suffix?' '+suffix:''}</span></label>
-        <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-grp="${grp}" data-key="${key}">
+        <label>${label} <span class="wgc-val" id="lbl_${grp}_${key}">${shown}${suffix?' '+suffix:''}</span></label>
+        <input type="range" min="${min}" max="${max}" step="${step}" value="${(+val).toFixed(6)}" data-grp="${grp}" data-key="${key}" data-suffix="${suffix}">
       </div>
     `;
   }
@@ -424,19 +457,18 @@
   function bindInputs(){
     root.querySelectorAll('#wgcInputs input[type="range"]').forEach(inp=>{
       inp.addEventListener('input', e=>{
-        const grp = e.target.dataset.grp, key = e.target.dataset.key;
+        const grp = e.target.dataset.grp, key = e.target.dataset.key, suffix = e.target.dataset.suffix;
         state[grp][key] = parseFloat(e.target.value);
         const lbl = document.getElementById(`lbl_${grp}_${key}`);
-        const suffixMatch = lbl.textContent.match(/[a-z°]+$/i);
-        lbl.textContent = e.target.value + (suffixMatch && key!=='n' && !['az','az2','azApex','centerAz','spread'].includes(key) ? ' '+uLabel() : (key.startsWith('az')||key==='centerAz' ? '' : (key==='spread'?'°':(key==='n'?'':''))));
-        render();
+        lbl.textContent = e.target.value + (suffix ? ' '+suffix : '');
+        renderOutputs();
       });
     });
   }
 
-  // ---------- Geometry builders (all internal math in the *display* unit) ----------
-  function buildSloper(){
-    const s = state.sloper;
+  // ---------- Geometry builders (pure functions of the passed-in state slice;
+  // all math is in whatever unit the caller's values are already expressed in) ----------
+  function buildSloper(s){
     const wireLen = Math.sqrt(s.dist*s.dist + (s.z2-s.z1)*(s.z2-s.z1));
     const elev = Math.atan2(s.z2-s.z1, s.dist)*180/Math.PI;
     const p1 = {x:0,y:0,z:s.z1};
@@ -445,12 +477,11 @@
     return {
       points: [ {label:'Feed', ...p1}, {label:'Far end', ...p2} ],
       wires: [ {label:'W1 (radiator)', from:p1, to:p2} ],
-      summary: [ ['Wire length', fmt(wireLen)+' '+uLabel()], ['Elevation angle', fmt(elev)+'°'] ]
+      summary: [ ['Wire length', wireLen, 'length'], ['Elevation angle', elev, 'angle'] ]
     };
   }
 
-  function buildInvV(){
-    const s = state.invv;
+  function buildInvV(s){
     const apex = {x:0,y:0,z:s.zApex};
     const feedOff = az2xy(s.azApex, s.d1);
     const feed = {x:feedOff.x, y:feedOff.y, z:s.z1};
@@ -461,24 +492,27 @@
     return {
       points: [ {label:'Feed', ...feed}, {label:'Apex (mast)', ...apex}, {label:'Far end', ...far} ],
       wires: [ {label:'W1 (feed→apex)', from:feed, to:apex}, {label:'W2 (apex→far end)', from:apex, to:far} ],
-      summary: [ ['Leg 1 length', fmt(len1)+' '+uLabel()], ['Leg 2 length', fmt(len2)+' '+uLabel()], ['Total wire', fmt(len1+len2)+' '+uLabel()] ]
+      summary: [ ['Leg 1 length', len1, 'length'], ['Leg 2 length', len2, 'length'], ['Total wire', len1+len2, 'length'] ]
     };
   }
 
   function solveCatenaryA(l,h,s){
     const target = s*s-h*h;
     function f(a){ const x=l/(2*a); return 4*a*a*Math.sinh(x)*Math.sinh(x) - target; }
-    let lo=1e-6*l, hi=1000*l;
+    let lo=1e-9*l, hi=Math.max(l,1e-9);
+    // f(hi) must be < 0 to bracket the root; as slack shrinks toward zero, the
+    // catenary parameter `a` grows without bound, so a fixed hi isn't safe — expand it.
+    let guard=0;
+    while(f(hi)>0 && guard<200){ hi*=2; guard++; }
     for(let i=0;i<200;i++){ const mid=(lo+hi)/2; if(f(mid)>0) lo=mid; else hi=mid; }
     return (lo+hi)/2;
   }
 
-  function buildSag(){
-    const s = state.sag;
+  function buildSag(s){
     const l = s.dist, h = s.z2-s.z1, wire = s.wireLen;
     const straight = Math.sqrt(l*l+h*h);
     if(wire<=straight){
-      return { points:[], wires:[], summary:[['Status','wire too short — increase length']], invalid:true };
+      return { points:[], wires:[], summary:[['Status','wire too short — increase length','raw']], invalid:true, straight };
     }
     const a = solveCatenaryA(l,h,wire);
     const xv = (l/2) - a*Math.asinh(h/(2*a*Math.sinh(l/(2*a))));
@@ -496,7 +530,6 @@
     for(let i=0;i<pts.length-1;i++){
       wires.push({label:`W${i+1}`, from:pts[i], to:pts[i+1]});
     }
-    const sagDepth = Math.max(0, s.z1 - zAt(xv) >= 0 ? (s.z1 < zAt(0)?0:0) : 0); // vertex sag relative to chord, computed below
     // sag relative to straight chord: find lowest point of catenary vs chord line
     let maxSag = 0;
     for(let i=0;i<=100;i++){
@@ -507,21 +540,24 @@
       if(sagHere>maxSag) maxSag = sagHere;
     }
     return {
-      points: pts, wires,
-      summary: [ ['Straight-line dist', fmt(straight)+' '+uLabel()], ['Slack', fmt(wire-straight)+' '+uLabel()], ['Max sag below chord', fmt(maxSag)+' '+uLabel()] ]
+      points: pts, wires, straight,
+      summary: [ ['Straight-line dist', straight, 'length'], ['Slack', wire-straight, 'length'], ['Max sag below chord', maxSag, 'length'] ]
     };
   }
 
-  function buildCounterpoise(){
-    const s = state.counterpoise;
+  function buildCounterpoise(s){
     const n = Math.round(s.n);
     const pts = [];
     const wires = [];
     const feed = {x:0,y:0,z:s.zAttach};
+    // At a full 360° spread the first and last radial are 360° apart, i.e. the
+    // same bearing — dividing by (n-1) would double up that bearing instead of
+    // giving n evenly-spaced radials, so use n as the divisor in that case.
+    const step = n===1 ? 0 : (s.spread===360 ? s.spread/n : s.spread/(n-1));
     for(let i=0;i<n;i++){
       let az;
       if(n===1){ az = s.centerAz; }
-      else { az = s.centerAz - s.spread/2 + i*(s.spread/(n-1)); }
+      else { az = s.centerAz - s.spread/2 + i*step; }
       const off = az2xy(az, s.len);
       const end = {x:off.x, y:off.y, z:s.zEnd};
       pts.push({label:`R${i+1} end`, ...end});
@@ -530,15 +566,15 @@
     return {
       points: [{label:'Feed/attach', ...feed}, ...pts],
       wires,
-      summary: [ ['Radials', n], ['Length each', fmt(s.len)+' '+uLabel()], ['Total wire', fmt(n*s.len)+' '+uLabel()] ]
+      summary: [ ['Radials', n, 'count'], ['Length each', s.len, 'length'], ['Total wire', n*s.len, 'length'] ]
     };
   }
 
   function build(){
-    if(type==='sloper') return buildSloper();
-    if(type==='invv') return buildInvV();
-    if(type==='sag') return buildSag();
-    if(type==='counterpoise') return buildCounterpoise();
+    if(type==='sloper') return buildSloper(state.sloper);
+    if(type==='invv') return buildInvV(state.invv);
+    if(type==='sag') return buildSag(state.sag);
+    if(type==='counterpoise') return buildCounterpoise(state.counterpoise);
   }
 
   // ---------- Rendering ----------
@@ -552,9 +588,24 @@
     tbl.innerHTML = rows;
   }
 
+  function formatSummaryValue(value, kind){
+    if(kind==='length') return fmt(value)+' '+uLabel();
+    if(kind==='angle') return fmt(value)+'°';
+    if(kind==='count') return String(value);
+    return value; // 'raw' — already a display-ready string
+  }
+
   function renderSummary(model){
     const el = document.getElementById('wgcSummary');
-    el.innerHTML = model.summary.map(([k,v])=>`<div class="wgc-summary-item"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+    el.innerHTML = model.summary.map(([k,v,kind])=>`<div class="wgc-summary-item"><span class="k">${k}</span><span class="v">${formatSummaryValue(v,kind)}</span></div>`).join('');
+  }
+
+  function renderSagWarning(model){
+    const slot = document.getElementById('wgcSagWarn');
+    if(!slot) return; // not on the Sagging Sloper tab
+    slot.innerHTML = model.invalid
+      ? `<div class="wgc-warn">Wire length must exceed the straight-line distance (${fmt(model.straight)} ${uLabel()}) or there's no slack to sag. Increase wire length.</div>`
+      : '';
   }
 
   function renderExport(model){
@@ -640,32 +691,54 @@
     top.innerHTML = topSvg;
   }
 
-  function render(){
-    document.getElementById('wgcInputs').innerHTML = `<div class="wgc-panel-label">Parameters</div>` + fieldsHTML();
-    bindInputs();
+  // renderOutputs() alone is safe to call on every slider-drag tick (table,
+  // summary, export, SVGs, sag warning) — it never touches #wgcInputs, so it
+  // can't interrupt an in-progress drag by replacing the slider's own DOM node.
+  // renderInputs() rebuilds the parameter panel itself and is only needed on
+  // tab switch / unit toggle / initial load.
+  function renderOutputs(){
     const model = build();
     renderTable(model);
     renderSummary(model);
+    renderSagWarning(model);
     renderExport(model);
     renderSVGs(model);
+  }
+
+  function renderInputs(){
+    document.getElementById('wgcInputs').innerHTML = `<div class="wgc-panel-label">Parameters</div>` + fieldsHTML();
+    bindInputs();
+  }
+
+  function render(){
+    renderInputs();
+    renderOutputs();
   }
 
   // ---------- Unit conversion on toggle ----------
   function convertAllUnits(newUnit){
     if(newUnit===unit) return;
     const factor = newUnit==='ft' ? (1/0.3048) : 0.3048; // from current unit to new
-    const lengthKeysByGrp = {
-      sloper:['z1','z2','dist'],
-      invv:['zApex','z1','d1','z2','d2'],
-      sag:['z1','z2','dist','wireLen'],
-      counterpoise:['len','zAttach','zEnd']
-    };
-    Object.keys(lengthKeysByGrp).forEach(grp=>{
-      lengthKeysByGrp[grp].forEach(k=>{
-        state[grp][k] = Math.round(state[grp][k]*factor*100)/100;
+    // Compute the raw converted values before flipping `unit`, since lenRange()
+    // (used below) reads the current unit to know which grid to snap onto.
+    const converted = {};
+    Object.keys(lengthFieldSpecs).forEach(grp=>{
+      converted[grp] = {};
+      Object.keys(lengthFieldSpecs[grp]).forEach(k=>{
+        converted[grp][k] = state[grp][k]*factor;
       });
     });
     unit = newUnit;
+    // Snap each converted value onto the new unit's own slider step grid —
+    // rounding to a fixed number of decimals instead (as before) could land
+    // between two valid steps, which the browser then silently re-snaps to
+    // the nearest step on render (e.g. 10.67 m snapping to 11 with step=1).
+    Object.keys(lengthFieldSpecs).forEach(grp=>{
+      Object.keys(lengthFieldSpecs[grp]).forEach(k=>{
+        const [min,,step] = lenRange(...lengthFieldSpecs[grp][k]);
+        state[grp][k] = roundToStep(converted[grp][k], min, step);
+      });
+    });
   }
 
   document.getElementById('unitToggle').addEventListener('click', e=>{
@@ -694,6 +767,12 @@
       setTimeout(()=>{ btn.textContent='Copy'; btn.classList.remove('copied'); }, 1400);
     });
   });
+
+  // Exposes the pure geometry functions for the test suite in tests/*.html
+  // (which loads this real file in an iframe rather than keeping a separate
+  // copy, so tests can never drift out of sync with shipped behavior).
+  // Purely additive — no effect on the app itself.
+  window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA };
 
   render();
 })();

@@ -77,15 +77,25 @@ https://tamooj.github.io/pota-wire-geometry-calc/
   tab-separated coordinate table for manual paste (see roadmap)
 - No sag modeling yet for inverted-V legs or counterpoise radials (only the
   dedicated Sagging Sloper tab models catenary droop)
-- Counterpoise fan at a full 360° spread currently double-books one radial
-  bearing instead of spacing N radials evenly — tracked in
-  [docs/DESIGN.md](docs/DESIGN.md#34-counterpoise-fan)
 - Sliders only, no precise numeric entry (a synced number input is on the
   roadmap)
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full design rationale — including
 the catenary derivation, the reasoning behind specific design choices, and the
-complete known-issues / roadmap list.
+complete roadmap.
+
+## Testing
+
+Unit and system tests live in [`tests/`](tests/) as plain HTML pages — no
+build step or dependencies, matching the tool itself. Open
+[`tests/unit-geometry.html`](tests/unit-geometry.html) (pure geometry math) or
+[`tests/system-app.html`](tests/system-app.html) (drives the real app's DOM:
+tabs, sliders, unit toggle) directly in a browser, or serve the repo root
+(`python -m http.server`) and open them at `http://localhost:8000/tests/...`
+— serving avoids some browsers' restrictions on script access across `file://`
+iframe boundaries. Both pages load the real `index.html`, so tests can't drift
+out of sync with what's actually shipped. See
+[docs/DESIGN.md §7](docs/DESIGN.md#7-testing) for details.
 
 ## Contributing
 
