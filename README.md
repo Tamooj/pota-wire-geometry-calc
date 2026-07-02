@@ -1,4 +1,4 @@
-# POTA Wire Antenna Geometry Calculator
+# POTA Wire Antenna Coordinate Sketcher
 
 A browser-based tool that turns design or field-measurable numbers - pole height,
 distances to a tree, compass bearing, wire slack - into ready-to-paste 3D wire
