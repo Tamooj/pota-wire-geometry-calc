@@ -81,19 +81,20 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 
 - No ground-system loss, soil conductivity, or near-field ground modeling —
   output is geometry only, for import into a NEC-2 engine that handles the EM
-  solve
+  solve.
 - The EZNEC and MMANA export formats approximate those tools' own file/report
   layouts closely, but neither is a byte-verified, directly re-importable
   native deck (not tested against the actual EZNEC/MMANA applications — see
-  roadmap)
+  roadmap). Typically some cut/paste into a text files is needed.
 - EZNEC-format connection strings for a point shared by 3+ wires (e.g. a
   counterpoise fan's common feed point) are best-effort — see
   [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats-v12v13)
 - No sag modeling yet for inverted-V legs or counterpoise radials (only the
-  dedicated Sagging Sloper tab models catenary droop)
+  dedicated Sagging Sloper tab will model catenary droop)
 - Sliders only, no precise numeric entry (a synced number input is on the
   roadmap)
-
+- Note: In the Sloper tab, ignore the distance-to-support slider.
+  
 See [docs/DESIGN.md](docs/DESIGN.md) for the full design rationale — including
 the catenary derivation, the reasoning behind specific design choices, and the
 complete roadmap.
