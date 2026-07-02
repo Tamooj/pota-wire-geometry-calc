@@ -82,6 +82,10 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 - No ground-system loss, soil conductivity, or near-field ground modeling —
   output is geometry only, for import into a NEC-2 engine that handles the EM
   solve.
+- The CounterPoise tab will output a table of wire segment coordinates - after setting
+  them up, you will likely want to append that list to the wire definitions for an
+  existing active-element definition. Remember to change the count of total wire
+  segments in the file too.
 - The EZNEC and MMANA export formats approximate those tools' own file/report
   layouts closely, but neither is a byte-verified, directly re-importable
   native deck (not tested against the actual EZNEC/MMANA applications — see
