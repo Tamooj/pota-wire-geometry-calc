@@ -423,6 +423,9 @@
         <svg id="svg3d" class="wgc-3d" viewBox="0 0 640 340" style="width:100%;height:auto;"></svg>
       </div>
 
+      <div class="wgc-warnings" id="wgcWarnings"></div>
+      <div class="wgc-summary" id="wgcSummary"></div>
+
       <div class="wgc-diagrams">
         <div class="wgc-svg-box">
           <div class="wgc-svg-title" id="wgcSideTitle">Side Profile (elevation)</div>
@@ -433,9 +436,6 @@
           <svg id="svgTop" viewBox="0 0 320 220" style="width:100%;height:auto;"></svg>
         </div>
       </div>
-
-      <div class="wgc-warnings" id="wgcWarnings"></div>
-      <div class="wgc-summary" id="wgcSummary"></div>
 
       <div class="wgc-panel">
         <div class="wgc-panel-label">Coordinate Table (X=East, Y=North, Z=Up, feed at origin)</div>
@@ -478,7 +478,7 @@
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
   const APP_VERSION = 'v2.0.0';
-  const APP_BUILD = 2;
+  const APP_BUILD = 3;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
