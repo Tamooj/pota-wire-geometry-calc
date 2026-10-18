@@ -1,86 +1,74 @@
 # Handoff: POTA Wire Antenna Geometry Calculator
 
-Context summary for a fresh session. Written 2026-10-18. Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations and rationale).
+Context summary for a fresh session. Last updated 2026-10-18 (app **v2.0.0**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
 
 ## What this is
 
-A single-file, vanilla-JS browser tool (`index.html`) that turns field-measurable numbers (support heights, distances, compass bearings, wire slack) into 3D wire coordinates for **NEC-2 antenna modeling software** (EZNEC, MMANA-GAL). It does **not** simulate anything; it is a geometry front-end that feeds those tools.
+A single-file, vanilla-JS browser tool (`index.html`) that turns field-measurable numbers (support heights, distances, compass bearings, wire slack) into 3D wire coordinates for **NEC-2 antenna modeling software** (EZNEC, MMANA-GAL). It does **not** simulate anything; it is a geometry front-end that feeds those tools. It started as a mobile field sketching tool and has also become a much nicer way to enter catenary arcs and counterpoise sets into the (Win 3.1-style) modeling tools.
 
-- Repo: https://github.com/Tamooj/pota-wire-geometry-calc (public, MIT, GitHub Pages enabled at https://tamooj.github.io/pota-wire-geometry-calc/)
+- Repo: https://github.com/Tamooj/pota-wire-geometry-calc (public, MIT, GitHub Pages at https://tamooj.github.io/pota-wire-geometry-calc/)
 - Owner: Tamooj (a ham doing POTA with random-wire antennas on a 9:1 unun)
-- Last pushed commit when this was written: `fc126ee`, app version **v1.4.1 · build 2**
 
-## Hard constraints from the user
+## Working agreements
 
-- **The shipped runtime artifact must stay a single HTML file** (easy to download and run on phone and desktop). Dev/test tooling may be multiple files.
-- **No build step, no runtime dependencies.** Node.js is not installed on the user's machine; Python 3 is.
-- **Commit and push only when asked.** Don't credit or reference the q-primer project in docs (the user wrote both with Claude; no credit needed).
-- The user prefers concise answers and direct, recommended choices over option surveys.
-- **Bump `APP_BUILD` (and `APP_VERSION` for milestones) in `index.html` on every edit.** It renders bottom-right as `vX.Y.Z · build N`. This exists because stale cached copies caused repeated phantom-bug confusion. When the user reports odd behavior, first ask what build number they see.
+- **The shipped runtime artifact stays a single HTML file** (no build step, no runtime dependencies; opens from `file://`). Dev/test tooling may be multiple files. Node.js is not installed; Python 3 is.
+- **Work locally on `main` only; commit and push each time** (the user said so for this phase).
+- **Bump `APP_BUILD` (and `APP_VERSION` for milestones) in `index.html` on every edit.** It renders bottom-right as `vX.Y.Z · build N` and exists because stale cached copies caused repeated phantom-bug confusion. When the user reports odd behavior, first ask what build number they see.
+- Don't credit or reference the q-primer project in docs. Concise answers and direct, recommended choices over option surveys.
+- Keep `docs/DESIGN.md` in sync with behavior changes and keep the tests green. Verify UI changes in the browser preview before reporting done.
 
 ## Repo layout
 
 ```
-index.html              the whole app (HTML + CSS + JS inline)
-README.md               user-facing intro; leads with "this feeds the modeling tools, it is not a simulator"
-docs/DESIGN.md          design record: coordinate conventions, catenary derivation, export formats, architecture, roadmap
-tests/harness.js        ~70-line hand-rolled suite()/test()/assert framework
-tests/unit-geometry.html    unit tests; loads real index.html in an iframe, calls window.WGC functions
-tests/system-app.html       system tests; drives the real DOM in an iframe
-.claude/launch.json     python -m http.server config for the preview tool
-LICENSE                 MIT
-HANDOFF.md              this file
+index.html                  the whole app (HTML + CSS + JS inline)
+README.md                   user-facing intro
+docs/DESIGN.md              design record: model, catenary derivation, exports, architecture, roadmap
+tests/harness.js            ~70-line hand-rolled suite()/test()/assert framework
+tests/unit-geometry.html    unit tests; load real index.html in an iframe, call window.WGC
+tests/system-app.html       system tests; drive the real DOM in an iframe
+.claude/launch.json         python -m http.server 8420 config for the preview tool
+HANDOFF.md                  this file
 ```
 
-## Features (current)
+## The v2.0 model (replaces the four per-type tabs)
 
-Four geometry tabs, each with independent state: **Straight Sloper**, **Inverted-V End-Fed** (legs deliberately not forced collinear), **Sagging Sloper** (catenary solved by bisection, 11 waypoints / 10 wires), **Counterpoise Fan** (N radials over a spread; at spread=360 it divides by n, not n-1).
+Everything is one screen with a **scene** of elements:
 
-- Feet/meters toggle converts stored values; slider min/max/step are unit-aware (`lengthFieldSpecs`, `lenRange`, `roundToStep`).
-- Side-profile and plan-view SVGs; coordinate table.
-- **Three export formats** (toggle in the export panel):
-  - **Generic**: tab-separated `label X1 Y1 Z1 X2 Y2 Z2`.
-  - **EZNEC**: approximates EZNEC Pro/2+'s "Wires" report text (same header rows, 6-sig-fig variable-precision coordinates, `W{n}E{1|2}` connection strings via `findConnection()`, fixed trailing columns `#10 / 2 segs / 1 0 0 0 1`). Column widths approximate the sample, not byte-exact. Connection strings for 3+-way junctions (counterpoise feed point) are best-effort.
-  - **MMANA**: `.maa`-format body. Wire line is `X1,Y1,Z1,X2,Y2,Z2,R,SEG` joined with `,\t`. **X/Y/Z are always meters** regardless of display unit (`toMeters()`). `R` is wire *radius* in meters (`WIRE_RADIUS_IN = 0.0509` is #10 AWG; shared with the EZNEC `#10` label). `SEG` is a segmentation *mode code*, not a count: `-1` = tapering (recommended default), `-2/-3` = partial tapering, `0` = automatic regular, positive = manual count. It must be a bare integer (`-1`, never `-1.0`). Source is `w1b,0.0,1.0` at wire 1's start; Load is `0,1` (none); Segmentation `400,40,2.0,1` and ground/pattern `2,0.0,1,50.0,120,60,0.0` are fixed constants copied from MMANA-GAL's bundled sample files. A **Frequency (MHz)** number input (default 14.0) feeds line 3 of the file.
-- Copy button: tries `navigator.clipboard.writeText`, falls back to `document.execCommand('copy')`, shows a red "Select text & Ctrl+C" state if both fail (the Clipboard API needs a secure context, so it fails silently on `file://`).
+- A **wire** runs along one azimuth through **supports** (`{d, z}`: horizontal distance from the wire's start, and height). Each **span** between neighbouring supports has its own **slack** (extra wire length): 0 = taut, >0 = catenary (11 points / 10 sub-wires, stepped evenly in horizontal x). A vertical span can't sag.
+- A wire **attaches** to the origin or to a support of an earlier wire (this expresses bent V's and chained wires). The attached wire's start height is derived from the attach point (read-only in the UI).
+- A **fan** (counterpoise) attaches to a support and makes N straight radials across a spread (360° divides by n, not n-1). `len` is the cut length; horizontal reach is derived from the height drop.
+- The **feed** is the start of the *source wire*; the solver shifts the whole model so the feed is `(0,0,z_feed)`.
+- Old tabs survive as **presets** (Straight Sloper, Sagging Sloper, Inverted-V, Sagging Inverted-V, Inverted-L, Sloper + Counterpoise) that replace the scene.
+- Every length/angle has a **number box + slider**. Stored values are exact (typed values aren't snapped); slider ranges are unit-native and widen to a round-number ceiling when a value exceeds 90% of the default max (recomputed only at panel rebuild, never mid-drag). Unit toggle converts exactly.
+- **Exports** (Generic / EZNEC / MMANA) read one merged, ordered sub-wire list. MMANA: X/Y/Z always meters; `R` = wire radius m (#10 AWG); `SEG = -1` bare integer; source `w{k}b` on the chosen source wire's first sub-wire; fixed Segmentation/ground lines copied from MMANA-GAL samples; Frequency field feeds line 3. EZNEC: approximates the "Wires" report with `W{n}E{1|2}` connections via `findConnection()` (first match only for 3+-way junctions; best-effort); fixed `#10 / 2 segs / 1 0 0 0 1` trailing columns.
+- **Views**: SVG 3D view (orthographic, drag/wheel/Top-Side-Reset; ground drawn as four lines on Z=0, drop lines, N/E labels), side profile (projected onto the first wire's azimuth), plan view; all with round-number scale labels.
+- **Warnings**: sag below ground, radial shorter than its height drop, sag solver failure.
+- Pure solver `solveScene(scene)` returns `{elements, points, wires, summary, warnings, firstSub, feed}`. `window.WGC` exposes it and helpers for tests. Render pipeline: `renderInputs()` (panel rebuild) vs `renderOutputs()` (every input event; never touches the panel so a drag can't destroy its own slider).
 
-Format sources: three real `.maa` samples in `C:\MMANA-GALBasic3\ANT\HF simple\Vertical\` (Inverted L, Sloper GP, Folded_GP1), the MMANA-GAL Basic manual PDF (https://www.tcpsas.com/sezioneIV/MMANA-GAL/docs/MmanaGalBasic.pdf, pp. 4-8), and a real EZNEC export `Cat Chain model r1.txt` in the user's Dropbox (`Amateur Radio\Antenna & Xformer Design\`).
-
-## Architecture notes
-
-- `build*(stateSlice)` functions are pure and return `{points, wires, summary}` where summary entries are `[label, rawValue, kind]`. New geometry types must keep this shape.
-- `renderInputs()` runs only on tab/unit change/init; `renderOutputs()` runs on every slider input (so a drag never destroys its own slider node).
-- `window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA, findConnection, eznecNum, mmanaNum }` is exposed purely for tests.
-- `eznecNum`/`mmanaNum` snap |v| < 1e-9 to 0 (az2xy's sin/cos leaves values like 1.8e-15).
-- A `<textarea>`'s `.value` normalizes `\r\n` to `\n`, so real `.maa` CRLF line endings can't be produced through the export box.
+Format sources for the exports: three real `.maa` samples in `C:\MMANA-GALBasic3\ANT\HF simple\Vertical\` (Inverted L, Sloper GP, Folded_GP1), the MMANA-GAL Basic manual PDF (https://www.tcpsas.com/sezioneIV/MMANA-GAL/docs/MmanaGalBasic.pdf, pp. 4-8), and a real EZNEC export `Cat Chain model r1.txt` in the user's Dropbox (`Amateur Radio\Antenna & Xformer Design\`).
 
 ## Testing
 
-35 tests (19 unit + 16 system) at last run, all passing. Tests are plain HTML pages: serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster (a static src served stale copies). Copy-button tests mock the clipboard because real availability is environment-dependent.
+70 tests (35 unit + 35 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
 
 ## Tooling gotchas learned the hard way
 
-- A dropped closing brace in `index.html` broke every handler silently: the preview console log showed nothing. To find it, fetch the page text, extract the `<script>` body, and `eval` it in a try/catch to get the `SyntaxError`.
-- Navigate with a cache-busting query (`?x=` + `Math.random()`); a plain `location.reload()` may reuse a cached copy.
-- The preview tool's `preview_click` simulates mouse movement and can drag through range sliders, corrupting their values. Use `eval` with direct `.click()` and `dispatchEvent(new Event('input', {bubbles:true}))` instead.
-- `preview_screenshot` sometimes times out; `eval`/`inspect` still work.
-- The preview tool reads `.claude/launch.json` from the *session's project root*. In a session rooted at this repo, the committed `.claude/launch.json` works as is (no `--directory` flag needed).
-- Python PDF text extraction: `pip install pypdf` (installed for the Python 3.14 on this machine); write output to a file, since console encoding chokes on ligatures.
+- A dropped closing brace in `index.html` can break every handler silently; to find it, extract the `<script>` body and `eval` it in a try/catch to get the `SyntaxError`.
+- Navigate with a cache-busting query (`?x=` + `Math.random()`); a plain reload may reuse a cached copy.
+- The preview tool's click simulation can drag through range sliders and corrupt values; use `javascript_exec` with direct `.click()` and `dispatchEvent(new Event('input', {bubbles:true}))` (then `'change'` for number boxes).
+- A `<textarea>`'s `.value` normalizes `\r\n` to `\n`, so real `.maa` CRLF can't be produced through the export box.
+- The preview tool reads `.claude/launch.json` from the session's project root; the committed one works as is.
 
-## Status of open items
+## Roadmap (details in docs/DESIGN.md §5)
 
-- **MMANA import**: the user reported "-1.0 is not a valid format" on import. Root cause was a stale cached build (the `-1.0` bug existed only in an uncommitted intermediate edit). After refreshing, the user said it was "much better." Not formally confirmed against MMANA-GAL beyond that; if it recurs, first check the build number, then ask whether they are pasting rows into MMANA's Geometry table or loading a whole `.maa` file.
-- **Counterpoise workflow**: the Counterpoise tab models a ground system meant to attach to another tab's feedpoint (match `zAttach` to that feed height). There is no combined export; the user must merge wire lists by hand in EZNEC/MMANA and keep only one source. A "combine tabs into one export" feature is a natural next step but hasn't been requested.
-- **Wire gauge**: fixed at #10 AWG. Computed alternatives: #16 radius 0.0254 in / 0.00064516 m; #22 radius 0.0127 in / 0.00032258 m. The last offer, making gauge a selectable field, was not answered.
+1. **Dipoles** (feed somewhere along a wire at a segment end) — the model is already shaped for it; needs source placement UI and verified MMANA wire-end syntax. User: "not today".
+2. **Sloped / offset ground plane** — user asked this be logged for a future revision; ground is currently flat Z=0.
+3. Native file download (`.maa`, maybe `.ez`) verified against the real apps; segmentation from frequency.
+4. Saved scenarios (`localStorage` / JSON).
+5. Arc-length-uniform catenary points; free "tail" ends; wire gauge selector (#16 radius 0.0254 in, #22 0.0127 in); coupling warnings.
 
-## Roadmap ideas (from docs/DESIGN.md §5)
+## Open items / things not verified
 
-1. Native/verified `.ez` / `.nec` / `.maa` export (verify round-trip against the real apps; derive segmentation from frequency).
-2. Saved presets / scenario library (`localStorage` and/or JSON import/export).
-3. Numeric entry synced with sliders (the Frequency field is the first real use of the number-input CSS).
-4. Sag modeling for inverted-V legs and counterpoise radials.
-5. Arc-length-uniform catenary waypoints; wire gauge/segmentation guidance; counterpoise/main-wire coupling warnings.
-
-## Working-style reminders
-
-Make a recommendation rather than listing options. Verify changes in the browser via the preview tool before reporting done. Don't commit or push without being asked. Keep `docs/DESIGN.md` in sync with behavior changes, and keep the tests green.
+- v2.0 exports have been checked by tests and by eye, not yet round-tripped through the real EZNEC/MMANA apps. If the user reports an MMANA import problem, first check the build number, then ask whether they paste rows into the Geometry table or load a whole `.maa`. (An earlier "-1.0 is not a valid format" report was a stale cached build.)
+- In v1 the Inverted-V put the apex at the origin; in v2 the feed is always the origin, so inverted-V coordinates differ by a translation.
+- Mobile layout: checked at 375px (no horizontal overflow; panel stacks above the views). Touch-drag on the 3D view is implemented via pointer events but not tested on a real phone.

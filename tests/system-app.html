@@ -8,39 +8,54 @@
   <h2 style="font-family:monospace;">Wire Geometry Calculator — system tests (real DOM, real events)</h2>
   <p style="font-family:monospace; font-size:12px; color:#555; max-width:640px;">
     Loads the real <code>../index.html</code> in an iframe and drives it like
-    a user would — clicking tabs, dragging sliders (dispatching real
-    <code>input</code> events) — then inspects the resulting DOM. If this page
-    was opened directly via <code>file://</code> and the iframe below stays
-    blank/fails to load, serve the repo instead
-    (<code>python -m http.server</code> from the repo root, then open
-    <code>http://localhost:8000/tests/system-app.html</code>) — some browsers
-    restrict script access across <code>file://</code> iframe boundaries.
+    a user would — clicking presets, dragging sliders and typing in number
+    boxes (dispatching real <code>input</code>/<code>change</code> events) — then
+    inspects the resulting DOM. If this page was opened directly via
+    <code>file://</code> and the iframe below stays blank/fails to load, serve
+    the repo instead (<code>python -m http.server</code> from the repo root,
+    then open <code>http://localhost:8000/tests/system-app.html</code>) — some
+    browsers restrict script access across <code>file://</code> iframe
+    boundaries.
   </p>
-  <iframe id="app" style="width:900px; height:500px; border:1px solid #ccc;"></iframe>
+  <iframe id="app" style="width:1000px; height:560px; border:1px solid #ccc;"></iframe>
   <div id="results" style="margin-top:16px;">Loading…</div>
 
   <script src="harness.js"></script>
   <script>
-    function setSlider(doc, grp, key, value) {
-      const inp = doc.querySelector(`input[data-grp="${grp}"][data-key="${key}"]`);
-      if (!inp) throw new Error(`slider not found: ${grp}.${key}`);
-      inp.value = value;
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      return inp;
-    }
-    function getSlider(doc, grp, key) {
-      return doc.querySelector(`input[data-grp="${grp}"][data-key="${key}"]`);
-    }
-    function clickTab(doc, type) {
-      doc.querySelector(`#wgcTabs [data-type="${type}"]`).click();
-    }
-
     // Cache-bust the iframe load — a static src="../index.html" can otherwise
     // serve a stale cached copy across test iterations during development.
     document.getElementById('app').src = '../index.html?_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const win = document.getElementById('app').contentWindow;
       const doc = win.document;
+      const WGC = win.WGC;
+
+      // ---- helpers ----
+      const scene = () => WGC.getScene();
+      const wireIds = () => scene().elements.filter(e => e.kind === 'wire').map(e => e.id);
+      function ctl(elId, field, idx, role) {
+        const sel = `[data-el="${elId}"][data-field="${field}"]` + (idx !== undefined && idx !== null ? `[data-idx="${idx}"]` : '') + `[data-role="${role}"]`;
+        const c = doc.querySelector(sel);
+        if (!c) throw new Error('control not found: ' + sel);
+        return c;
+      }
+      function drag(elId, field, idx, value) {          // slider drag: input events only
+        const c = ctl(elId, field, idx, 'rng');
+        c.value = value;
+        c.dispatchEvent(new Event('input', { bubbles: true }));
+        return c;
+      }
+      function type(elId, field, idx, value) {          // number box: type, then commit
+        const c = ctl(elId, field, idx, 'num');
+        c.value = String(value);
+        c.dispatchEvent(new Event('input', { bubbles: true }));
+        c.dispatchEvent(new Event('change', { bubbles: true }));
+        return c;
+      }
+      const preset = key => doc.querySelector(`#wgcPresets [data-preset="${key}"]`).click();
+      const exportText = () => doc.getElementById('wgcExport').value;
+      const setFormat = f => doc.querySelector(`#exportFormatToggle [data-format="${f}"]`).click();
+      const setUnit = u => doc.querySelector(`#unitToggle [data-unit="${u}"]`).click();
 
       suite('Version indicator (stale-cache sanity check)');
       test('a version/build string is visibly rendered on the page', () => {
@@ -48,93 +63,216 @@
         assert.isTrue(/^v\d+\.\d+\.\d+ · build \d+$/.test(text), `expected a "vX.Y.Z · build N" string, got "${text}"`);
       });
 
-      suite('Tab switching');
-      test('clicking a tab swaps the parameter panel to that geometry type', () => {
-        clickTab(doc, 'invv');
-        assert.isTrue(doc.getElementById('wgcInputs').textContent.includes('Apex'), 'expected inverted-V fields (Apex) to appear');
-        clickTab(doc, 'sloper'); // back to default for subsequent tests
+      suite('Presets');
+      test('each preset loads and produces a non-empty export', () => {
+        ['sloper', 'sagsloper', 'invv', 'saginvv', 'invl', 'sloperfan'].forEach(k => {
+          preset(k);
+          assert.isTrue(exportText().split('\n').length > 2, `preset ${k} produced no wires`);
+        });
+        preset('sloper');
+      });
+      test('Sloper + Counterpoise shows a wire card and a fan card', () => {
+        preset('sloperfan');
+        assert.equal(doc.querySelectorAll('.wgc-card').length, 2);
+        assert.equal(doc.querySelectorAll('.wgc-card.fan').length, 1);
+        preset('sloper');
+      });
+      test('Sagging Inverted-V has two slack controls, each live', () => {
+        preset('saginvv');
+        const id = wireIds()[0];
+        assert.equal(doc.querySelectorAll('[data-field="slack"][data-role="num"]').length, 2);
+        const before = exportText();
+        type(id, 'slack', 1, 4);
+        assert.notEqual(exportText(), before);
+        preset('sloper');
       });
 
       suite('Slider-drag render (jank fix)');
       test('dragging a slider does not replace its own DOM node', () => {
-        const before = getSlider(doc, 'sloper', 'az');
-        setSlider(doc, 'sloper', 'az', 45);
-        setSlider(doc, 'sloper', 'az', 200);
-        const after = getSlider(doc, 'sloper', 'az');
+        const id = wireIds()[0];
+        const before = ctl(id, 'az', undefined, 'rng');
+        drag(id, 'az', undefined, 45);
+        drag(id, 'az', undefined, 200);
+        const after = ctl(id, 'az', undefined, 'rng');
         assert.isTrue(before === after, 'expected the same range-input DOM node to survive multiple input events (no full inputs-panel rebuild mid-drag)');
       });
-      test('but the outputs (table/summary/export) still update on drag', () => {
-        setSlider(doc, 'sloper', 'az', 90);
-        setSlider(doc, 'sloper', 'dist', 30);
-        const exportBefore = doc.getElementById('wgcExport').value;
-        setSlider(doc, 'sloper', 'dist', 100);
-        const exportAfter = doc.getElementById('wgcExport').value;
-        assert.notEqual(exportBefore, exportAfter, 'expected the export text to change after dragging a geometry-affecting slider');
+      test('the number box follows the slider, and the outputs update on drag', () => {
+        const id = wireIds()[0];
+        drag(id, 'az', undefined, 90);
+        drag(id, 'sup.d', 1, 30);
+        const before = exportText();
+        drag(id, 'sup.d', 1, 100);
+        assert.notEqual(exportText(), before, 'expected the export to change after dragging a geometry slider');
+        assert.equal(ctl(id, 'sup.d', 1, 'num').value, '100', 'expected the number box to mirror the slider');
       });
 
-      suite('Sag warning reactivity');
-      test('warning appears/disappears live while dragging wireLen, without switching tabs', () => {
-        clickTab(doc, 'sag');
-        setSlider(doc, 'sag', 'dist', 30);
-        setSlider(doc, 'sag', 'z1', 4);
-        setSlider(doc, 'sag', 'z2', 26); // straight-line distance ≈ 37.2
-        setSlider(doc, 'sag', 'wireLen', 5); // well under straight-line distance
-        assert.isTrue(!!doc.querySelector('#wgcSagWarn .wgc-warn'), 'expected a warning for wire shorter than straight-line distance');
-        setSlider(doc, 'sag', 'wireLen', 60); // comfortably over
-        assert.isTrue(!doc.querySelector('#wgcSagWarn .wgc-warn'), 'expected the warning to clear once wireLen is valid again');
-        clickTab(doc, 'sloper');
+      suite('Number boxes (precise entry)');
+      test('typing an exact value is stored exactly (not snapped to a slider step)', () => {
+        preset('sloper');
+        const id = wireIds()[0];
+        type(id, 'sup.d', 1, 33.37);
+        assert.close(scene().elements[0].supports[1].d, 33.37, 1e-9);
+        assert.isTrue(exportText().includes('33.37'), 'expected the typed distance in the export');
       });
-
-      suite('Counterpoise 360° spread fix (through the real UI + export pipeline)');
-      test('n=4, spread=360 produces 4 distinct radial endpoints in the export text', () => {
-        clickTab(doc, 'counterpoise');
-        setSlider(doc, 'counterpoise', 'n', 4);
-        setSlider(doc, 'counterpoise', 'spread', 360);
-        const exportText = doc.getElementById('wgcExport').value;
-        const radialLines = exportText.split('\n').filter(l => /^R\d+\t/.test(l));
-        assert.equal(radialLines.length, 4);
-        const endpoints = radialLines.map(l => l.split('\t').slice(4, 6).join(','));
-        const distinct = new Set(endpoints);
-        assert.equal(distinct.size, 4, `expected 4 distinct radial endpoints, got ${JSON.stringify(endpoints)}`);
-        clickTab(doc, 'sloper');
+      test('typing a value beyond the default slider range widens that slider (and only then)', () => {
+        const id = wireIds()[0];
+        const defaultMax = +ctl(id, 'sup.d', 1, 'rng').max;
+        type(id, 'sup.d', 1, 400);
+        const wideMax = +ctl(id, 'sup.d', 1, 'rng').max;
+        assert.isAbove(wideMax, 400);
+        type(id, 'sup.d', 1, 35);
+        assert.equal(+ctl(id, 'sup.d', 1, 'rng').max, defaultMax, 'expected the slider range to return to default once the value is small again');
+      });
+      test('azimuth typed outside 0-360 wraps to a compass bearing', () => {
+        const id = wireIds()[0];
+        type(id, 'az', undefined, -90);
+        assert.equal(scene().elements[0].az, 270);
+        type(id, 'az', undefined, 90);
+      });
+      test('negative heights/distances are clamped to zero', () => {
+        const id = wireIds()[0];
+        type(id, 'sup.z', 1, -5);
+        assert.equal(scene().elements[0].supports[1].z, 0);
+        preset('sloper');
+      });
+      test('support distances stay in order: raising an earlier one pushes later ones along', () => {
+        preset('invv');
+        const id = wireIds()[0];
+        type(id, 'sup.d', 1, 50);
+        const d = scene().elements[0].supports.map(s => s.d);
+        assert.isTrue(d[2] >= d[1], `expected d[2] (${d[2]}) >= d[1] (${d[1]})`);
+        assert.equal(ctl(id, 'sup.d', 2, 'num').value, String(d[2]), 'expected the pushed control to update on screen');
+        preset('sloper');
       });
 
       suite('Unit toggle');
-      test('feet -> meters -> feet round-trips a slider value within rounding tolerance', () => {
-        setSlider(doc, 'sloper', 'dist', 35);
-        doc.querySelector('#unitToggle [data-unit="m"]').click();
-        const metersVal = parseFloat(getSlider(doc, 'sloper', 'dist').value);
-        assert.close(metersVal, 35 * 0.3048, 0.01);
-        doc.querySelector('#unitToggle [data-unit="ft"]').click();
-        const feetVal = parseFloat(getSlider(doc, 'sloper', 'dist').value);
-        assert.close(feetVal, 35, 0.05);
+      test('feet -> meters -> feet round-trips a value exactly', () => {
+        preset('sloper');
+        const id = wireIds()[0];
+        type(id, 'sup.d', 1, 35);
+        setUnit('m');
+        assert.close(scene().elements[0].supports[1].d, 35 * 0.3048, 1e-9);
+        setUnit('ft');
+        assert.close(scene().elements[0].supports[1].d, 35, 1e-9);
       });
-      test('converted value does not snap to a whole unit on next render (slider-step regression guard)', () => {
-        setSlider(doc, 'sloper', 'dist', 35);
-        doc.querySelector('#unitToggle [data-unit="m"]').click();
-        const metersVal = parseFloat(getSlider(doc, 'sloper', 'dist').value);
-        // The original bug: a hardcoded step=1 slider silently snapped 10.668 m to 11.
-        assert.close(metersVal, 10.668, 0.01);
-        doc.querySelector('#unitToggle [data-unit="ft"]').click();
+      test('converted value is not snapped to a slider step, and the number box shows it cleanly', () => {
+        const id = wireIds()[0];
+        type(id, 'sup.d', 1, 35);
+        setUnit('m');
+        assert.close(scene().elements[0].supports[1].d, 10.668, 1e-9);
+        assert.equal(ctl(id, 'sup.d', 1, 'num').value, '10.668');
+        setUnit('ft');
       });
-      test('label text after a unit toggle is a clean number, not floating-point noise', () => {
-        setSlider(doc, 'sloper', 'dist', 35);
-        doc.querySelector('#unitToggle [data-unit="m"]').click();
-        const labelText = doc.getElementById('lbl_sloper_dist').textContent;
-        assert.equal(labelText, '10.67 m', `expected a clean fmt()-rounded label, got "${labelText}"`);
-        doc.querySelector('#unitToggle [data-unit="ft"]').click();
+      test('slider steps are native to the unit (no feet-in-disguise steps in meters)', () => {
+        const id = wireIds()[0];
+        setUnit('m');
+        const step = +ctl(id, 'sup.d', 1, 'rng').step;
+        assert.isTrue(step === 0.5 || step === 1, `expected a round metric step, got ${step}`);
+        setUnit('ft');
+      });
+      test('a preset loaded in meters has metric-friendly numbers', () => {
+        setUnit('m');
+        preset('sloper');
+        const d = scene().elements[0].supports[1].d;
+        assert.close(d, Math.round(d * 20) / 20, 1e-9, `expected a multiple of 0.05 m, got ${d}`);
+        setUnit('ft');
+        preset('sloper');
+      });
+
+      suite('Adding, editing and removing wires and fans');
+      test('Add wire appends a second wire card, attached to the origin by default', () => {
+        preset('sloper');
+        doc.querySelector('[data-action="add-wire"]').click();
+        assert.equal(wireIds().length, 2);
+        assert.equal(scene().elements[1].attach, null);
+        assert.isTrue(!!doc.querySelector(`select[data-el="${wireIds()[1]}"]`));
+      });
+      test('choosing an attach point moves the second wire onto the first wire\'s support', () => {
+        const [a, b] = wireIds();
+        const sel = doc.querySelector(`select[data-el="${b}"][data-field="attach"]`);
+        sel.value = `${a}:1`;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        const m = WGC.solveScene(scene());
+        const far = m.points.find(p => p.label === 'Wire 1 · S2');
+        const start = m.wires.find(w => w.el === b).from;
+        assert.close(start.x, far.x, 1e-9);
+        assert.close(start.z, far.z, 1e-9);
+        assert.equal(ctl(b, 'sup.z', 0, 'num').disabled, true, 'an attached wire\'s start height is derived, so its box is read-only');
+      });
+      test('Insert support splits a span; the wire list grows and the attach index shifts', () => {
+        preset('sloper');
+        doc.querySelector('[data-action="add-fan"]').click();
+        const w = wireIds()[0];
+        const fanId = scene().elements[1].id;
+        // attach the fan to the far support, then insert one before it
+        const sel = doc.querySelector(`select[data-el="${fanId}"][data-field="attach"]`);
+        sel.value = `${w}:1`;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        doc.querySelector(`[data-action="insert-support"][data-el="${w}"][data-idx="0"]`).click();
+        assert.equal(scene().elements[0].supports.length, 3);
+        assert.equal(scene().elements[1].attach.idx, 2, 'the fan should still be attached to the far end (now support 3)');
+      });
+      test('Remove support merges spans; Remove wire detaches whatever hung off it', () => {
+        const w = wireIds()[0];
+        doc.querySelector(`[data-action="remove-support"][data-el="${w}"][data-idx="1"]`).click();
+        assert.equal(scene().elements[0].supports.length, 2);
+        preset('sloperfan');
+        doc.querySelector('[data-action="add-wire"]').click();
+        const [a, b] = wireIds();
+        const sel = doc.querySelector(`select[data-el="${b}"][data-field="attach"]`);
+        sel.value = `${a}:1`;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        doc.querySelector(`[data-action="remove-el"][data-el="${a}"]`).click();
+        assert.equal(wireIds().length, 1);
+        assert.equal(scene().elements.find(e => e.id === b).attach, null, 'the survivor falls back to the origin');
+        assert.equal(scene().feedEl, b, 'the source moves to the surviving wire');
+        preset('sloper');
+      });
+      test('the last wire cannot be removed', () => {
+        preset('sloper');
+        assert.equal(doc.querySelectorAll('[data-action="remove-el"]').length, 0);
+      });
+
+      suite('Counterpoise fan (through the real UI + export pipeline)');
+      test('n=4, spread=360 produces 4 distinct radial endpoints in the export text', () => {
+        preset('sloperfan');
+        const f = scene().elements.find(e => e.kind === 'fan').id;
+        type(f, 'n', undefined, 4);
+        type(f, 'spread', undefined, 360);
+        const radialLines = exportText().split('\n').filter(l => /^Fan 1 R\d+\t/.test(l));
+        assert.equal(radialLines.length, 4);
+        const endpoints = radialLines.map(l => l.split('\t').slice(4, 6).join(','));
+        assert.equal(new Set(endpoints).size, 4, `expected 4 distinct radial endpoints, got ${JSON.stringify(endpoints)}`);
+        preset('sloper');
+      });
+      test('the fan inherits its height from the main wire\'s feed (no separate attach height to match)', () => {
+        preset('sloperfan');
+        const w = wireIds()[0];
+        type(w, 'sup.z', 0, 9);
+        const radial = exportText().split('\n').find(l => /^Fan 1 R1\t/.test(l)).split('\t');
+        assert.equal(parseFloat(radial[3]), 9);
+        preset('sloper');
+      });
+
+      suite('Warnings');
+      test('a sag that dips below ground shows a visible warning, and it clears when fixed', () => {
+        preset('sagsloper');
+        const id = wireIds()[0];
+        type(id, 'sup.z', 0, 1);
+        type(id, 'sup.z', 1, 1);
+        type(id, 'sup.d', 1, 40);
+        type(id, 'slack', 0, 12);
+        assert.isTrue(!!doc.querySelector('#wgcWarnings .wgc-warn'), 'expected a below-ground warning');
+        type(id, 'slack', 0, 0);
+        assert.isTrue(!doc.querySelector('#wgcWarnings .wgc-warn'), 'expected the warning to clear');
+        preset('sloper');
       });
 
       suite('EZNEC export format (through the real UI)');
       test('toggling to EZNEC format renders the WIRES-report header and chained connection strings', () => {
-        clickTab(doc, 'sag');
-        setSlider(doc, 'sag', 'az', 90);
-        setSlider(doc, 'sag', 'z1', 4);
-        setSlider(doc, 'sag', 'z2', 26);
-        setSlider(doc, 'sag', 'dist', 30);
-        setSlider(doc, 'sag', 'wireLen', 40);
-        doc.querySelector('#exportFormatToggle [data-format="eznec"]').click();
-        const text = doc.getElementById('wgcExport').value;
+        preset('sagsloper');
+        setFormat('eznec');
+        const text = exportText();
         const lines = text.split('\n');
         assert.isTrue(lines[0].startsWith('No.'), 'expected the EZNEC header row');
         assert.isTrue(lines[1].includes('Conn.'), 'expected the EZNEC sub-header row');
@@ -143,29 +281,29 @@
         assert.isTrue(lines[3].includes('W1E2'), 'expected wire 2 to chain back to wire 1');
         assert.isTrue(text.includes('#10'), 'expected the fixed wire-spec defaults to be present');
         assert.isFalse(/e[+-]\d/i.test(text), 'expected no scientific-notation floating-point noise in coordinates');
-        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
-        clickTab(doc, 'sloper');
+        setFormat('generic');
+        preset('sloper');
+      });
+      test('a sloper plus counterpoise exports as ONE merged wire list', () => {
+        preset('sloperfan');
+        setFormat('eznec');
+        assert.equal(exportText().split('\n').length, 2 + 5, '2 header lines + 1 sloper wire + 4 radials');
+        setFormat('generic');
+        preset('sloper');
       });
       test('switching back to generic format restores the plain tab-separated export', () => {
-        clickTab(doc, 'sloper');
-        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
-        const text = doc.getElementById('wgcExport').value;
-        assert.isTrue(text.startsWith('# Wire antenna geometry export'), 'expected the generic export header comment');
+        setFormat('generic');
+        assert.isTrue(exportText().startsWith('# Wire antenna geometry export'), 'expected the generic export header comment');
       });
 
       suite('MMANA export format (through the real UI)');
       test('toggling to MMANA format renders the .maa section structure with the entered frequency', () => {
-        clickTab(doc, 'sag');
-        setSlider(doc, 'sag', 'az', 90);
-        setSlider(doc, 'sag', 'z1', 4);
-        setSlider(doc, 'sag', 'z2', 26);
-        setSlider(doc, 'sag', 'dist', 30);
-        setSlider(doc, 'sag', 'wireLen', 40);
+        preset('sagsloper');
         const freqInput = doc.getElementById('mmanaFreqInput');
         freqInput.value = '7.15';
         freqInput.dispatchEvent(new Event('input', { bubbles: true }));
-        doc.querySelector('#exportFormatToggle [data-format="mmana"]').click();
-        const text = doc.getElementById('wgcExport').value;
+        setFormat('mmana');
+        const text = exportText();
         // Real .maa files use CRLF, but <textarea>.value always normalizes
         // \r\n to \n (spec-required "API value" behavior) — LF is all a
         // textarea can ever actually hold, so that's what we split on here.
@@ -173,7 +311,7 @@
         assert.equal(lines[1], '*', 'expected the fixed "*" separator line');
         assert.equal(lines[2], '7.15', 'expected the frequency field to reflect the input');
         assert.equal(lines[3], '***Wires***');
-        assert.equal(lines[4], '10', 'expected the wire count to match the sag model\'s 10 segments');
+        assert.equal(lines[4], '10', 'expected the wire count to match the sagging span\'s 10 segments');
         assert.isTrue(lines.includes('*** Source ***'));
         assert.isTrue(lines.includes('w1b,\t0.0,\t1.0'));
         assert.isTrue(lines.includes('*** Load ***'));
@@ -183,25 +321,62 @@
         assert.isFalse(/e[+-]\d/i.test(text), 'expected no unexpected scientific-notation noise');
         // Regression guard: SEG must be a bare integer ("-1"), not forced to "-1.0"
         // by the same decimal-forcing rule that applies to every other field.
-        const wireLine = lines[5];
-        assert.isTrue(wireLine.endsWith(',\t-1'), `expected SEG to be a bare "-1" with no decimal, got line: "${wireLine}"`);
-        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
-        clickTab(doc, 'sloper');
+        assert.isTrue(lines[5].endsWith(',\t-1'), `expected SEG to be a bare "-1" with no decimal, got line: "${lines[5]}"`);
+        setFormat('generic');
+        preset('sloper');
+      });
+      test('the Source selector moves the MMANA source to the chosen wire\'s first sub-wire', () => {
+        preset('sagsloper');
+        doc.querySelector('[data-action="add-wire"]').click();     // 2nd wire: 1 straight sub-wire, listed after wire 1's 10
+        const [, b] = wireIds();
+        const srcSel = doc.getElementById('wgcSourceSelect');
+        srcSel.value = b;
+        srcSel.dispatchEvent(new Event('change', { bubbles: true }));
+        setFormat('mmana');
+        assert.isTrue(exportText().split('\n').includes('w11b,\t0.0,\t1.0'), 'expected the source on wire 11 (the first sub-wire of the second wire)');
+        setFormat('generic');
+        preset('sloper');
       });
       test('MMANA coordinates are always in meters regardless of the active display unit', () => {
-        clickTab(doc, 'sloper');
-        setSlider(doc, 'sloper', 'az', 90);
-        setSlider(doc, 'sloper', 'z1', 0);
-        setSlider(doc, 'sloper', 'z2', 0);
-        setSlider(doc, 'sloper', 'dist', 100); // 100 ft
-        doc.querySelector('#unitToggle [data-unit="m"]').click(); // now the UI itself is in meters too
-        doc.querySelector('#exportFormatToggle [data-format="mmana"]').click();
-        const text = doc.getElementById('wgcExport').value;
-        const wireLine = text.split('\n')[5];
+        preset('sloper');
+        const id = wireIds()[0];
+        type(id, 'az', undefined, 90);
+        type(id, 'sup.z', 0, 0);
+        type(id, 'sup.z', 1, 0);
+        type(id, 'sup.d', 1, 100); // 100 ft
+        setUnit('m');              // now the UI itself is in meters too
+        setFormat('mmana');
+        const wireLine = exportText().split('\n')[5];
         const x2 = parseFloat(wireLine.split(',\t')[3]);
         assert.close(x2, 100 * 0.3048, 0.01, `expected the MMANA X2 coordinate to be in meters (~30.48) regardless of display unit, got ${x2}`);
-        doc.querySelector('#unitToggle [data-unit="ft"]').click();
-        doc.querySelector('#exportFormatToggle [data-format="generic"]').click();
+        setUnit('ft');
+        setFormat('generic');
+        preset('sloper');
+      });
+
+      suite('Views');
+      test('the 3D view draws a ground square as four lines on Z=0, plus the wire', () => {
+        preset('sloper');
+        const svg = doc.getElementById('svg3d');
+        const dashed = svg.querySelectorAll('line[stroke="#7fb069"]');
+        assert.equal(dashed.length, 4, 'expected exactly four ground-square lines');
+        assert.isTrue(svg.querySelectorAll('line[stroke="#ffa726"]').length >= 1, 'expected at least one wire line');
+      });
+      test('Top / Side buttons change the 3D camera and redraw', () => {
+        const svg = doc.getElementById('svg3d');
+        const before = svg.innerHTML;
+        doc.querySelector('[data-view="top"]').click();
+        const top = svg.innerHTML;
+        assert.notEqual(top, before);
+        doc.querySelector('[data-view="side"]').click();
+        assert.notEqual(svg.innerHTML, top);
+        doc.querySelector('[data-view="reset"]').click();
+        assert.equal(svg.innerHTML, before, 'Reset should return to the default view');
+      });
+      test('plan and side views carry round-number scale labels in the current unit', () => {
+        preset('sloper');
+        assert.isTrue(/\d+ ft/.test(doc.getElementById('svgTop').textContent), 'expected a ring label like "20 ft" in the plan view');
+        assert.isTrue(doc.getElementById('svgSide').textContent.includes('ft'));
       });
 
       suite('Copy button (clipboard fallback regression guard)');

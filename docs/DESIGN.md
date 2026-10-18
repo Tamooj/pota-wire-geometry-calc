@@ -1,166 +1,180 @@
 # Wire Antenna Geometry Calculator — Design Doc
 
-**Status:** v1.4.1 — v1 bugs fixed (v1.1), EZNEC export added (v1.2), MMANA export added (v1.3), on-screen version/build indicator + Copy button clipboard fallback added (v1.4), all covered by tests (see [tests/](../tests/))
+**Status:** v2.0.0 — rewritten around a single wires-and-supports model (replaces the four per-type tabs); multi-wire scenes with a merged export, number boxes beside sliders, unit-native slider ranges, a 3D view. v1.x history is summarized in Section 8. Covered by tests (see [tests/](../tests/)).
 **Artifact:** [`index.html`](../index.html) (single-file, vanilla JS, no build step)
-**Purpose:** Generate EZNEC/MMANA-ready wire coordinates for field-deployable POTA antenna geometries, ahead of time, so geometry doesn't get worked out on-site.
+**Purpose:** Generate EZNEC/MMANA-ready wire coordinates for field-deployable POTA antenna geometries, ahead of time, so geometry doesn't get worked out on-site — and, as it turned out, to make entering catenary arcs and counterpoise sets into those (Win 3.1-style) modeling tools far less painful.
 
 ---
 
 ## 1. Problem / Requirements
 
 ### Context
-Ad hoc POTA installations using random-wire antennas fed through 9:1 ununs into a Xiegu G90. Real-world constraints: available trees/supports are never in convenient positions, setup happens under time/comfort pressure (heat, insects), and it's preferable to have a small library of pre-modeled "go-to" geometries rather than improvising in the field.
+Ad hoc POTA installations using random-wire antennas fed through 9:1 ununs into a Xiegu G90. Real-world constraints: available trees/supports are never in convenient positions, setup happens under time/comfort pressure (heat, insects), and it's preferable to have a small library of pre-modeled "go-to" geometries rather than improvising in the field. In practice the tool has also become a general front-end for entering wire geometry into EZNEC and MMANA, which is why multi-wire models (an antenna plus its counterpoise) and precise numeric entry matter.
 
 ### Functional requirements
 1. Produce 3D coordinates (X, Y, Z) for wire endpoints, in a convention directly usable by EZNEC Pro 2+ v7.0 and MMANA wire-entry tables.
-2. Support multiple wire geometries relevant to random-wire POTA deployment:
-   - Straight sloper (single wire, feed low, one support, taut)
-   - Inverted-V end-fed (apex over a mast/tree, two legs at independent azimuth/angle down to feed and far ends — not necessarily collinear, since real tree pairs rarely line up)
-   - Sagging sloper (same as straight sloper, but modeling actual rope/wire slack as a catenary curve rather than an idealized straight line)
-   - Counterpoise fan (N radials, on-ground or elevated, fanned across a configurable arc)
-3. Support both feet and meters, with correct unit conversion of all stored parameters when toggled (not just display formatting).
-4. Provide live visual feedback: side-profile (elevation) and plan-view (compass-oriented, N-up) sketches that update with parameter changes.
-5. Provide a copy-pasteable plain-text export (tab-separated) of all wire segments, for direct entry into modeling software wire tables.
-6. Be usable as a durable reference tool — parameters saved as presets/scenarios for repeated real-world configs (not yet implemented — see Section 5).
+2. Model, in one screen and one model, everything the old tabs did: straight and sagging slopers, inverted-V (collinear or bent), inverted-L, and counterpoise fans — and combinations of them (e.g. a sloper plus its counterpoise) exported as a single merged wire list.
+3. Support both feet and meters, with correct unit conversion of all stored parameters when toggled (not just display formatting), and slider ranges/steps native to each unit.
+4. Provide live visual feedback: a rotatable 3D view, plus side-profile (elevation) and plan-view (compass-oriented, N-up) sketches, all updating with parameter changes.
+5. Provide copy-pasteable text exports (generic table, EZNEC "Wires" report, MMANA `.maa` body).
+6. Allow both quick slider entry and exact numeric entry for every length and angle.
+7. Saved presets/scenarios beyond the built-in starting points (not yet implemented — see Section 5).
 
-### Non-requirements (v1)
+### Non-requirements
 - Does not model ground system loss, soil conductivity, or near-field ground interaction — output is geometry only, for import into NEC-2 engines that handle the EM solve.
-- Does not currently export a native `.nec`, EZNEC `.ez`, or MMANA `.maa` file — output is a generic coordinate table intended for manual paste.
-- Sag modeling for inverted-V legs and counterpoise radials is not implemented (both currently assumed taut/straight).
+- Does not currently export a native `.nec`, EZNEC `.ez`, or MMANA `.maa` *file* — output is text for manual paste.
 
 ---
 
 ## 2. Coordinate System & Conventions
 
 - **X = East, Y = North, Z = Up** (standard right-handed, ground-referenced — matches typical EZNEC/MMANA ground-plane convention).
-- **Feedpoint is always the origin** `(0, 0, z_feed)`. Everything else is positioned relative to it. This matches how you'd actually stake out a site: feedpoint is the one fixed, known point; everything else is measured outward from it.
-- **Azimuth** is input as compass bearing in degrees from North (0° = N, 90° = E), matching ham convention rather than mathematical convention. Internally converted via:
-  ```
-  dx = R * sin(azimuth_rad)   // East component
-  dy = R * cos(azimuth_rad)   // North component
-  ```
-- All internal geometry math is performed in whatever unit is currently selected (feet or meters) — there is no hidden canonical unit; toggling units converts the *stored parameter values*, not just display strings, so switching units mid-edit doesn't silently corrupt a model.
+- **The feed is the origin** in X/Y, at its own height in Z: `(0, 0, z_feed)`. The feed is the start of the *source wire* (Section 4). If the source wire is itself attached partway along another wire, the whole model is re-solved shifted so the feed still lands at the origin. This matches how you'd actually stake out a site: the feedpoint is the one fixed, known point and everything else is measured outward from it.
+  > Note: in v1 the Inverted-V tab put the *apex* at the origin rather than the feed, contradicting this convention. In v2 the feed is always the origin, so inverted-V coordinates differ from v1 by a translation.
+- **Azimuth** is input as compass bearing in degrees from North (0° = N, 90° = E), matching ham convention. Internally converted via `dx = R sin(az)`, `dy = R cos(az)`.
+- **Distances along a wire are horizontal** (plan-view) distances, measured from the wire's start — what you pace out on the ground. Wire *length* only enters as slack within a span.
+- All internal geometry is performed in the currently selected unit; toggling units converts the *stored parameter values* exactly (no snapping), so switching units mid-edit never corrupts a model. MMANA export is always in meters (`toMeters()`).
+- **Ground is Z = 0**, flat. (A sloped or offset ground plane is a roadmap item.)
 
 ---
 
-## 3. Design Reasoning Per Geometry Type
+## 3. The Model: Wires, Supports, Spans, Fans
 
-### 3.1 Straight Sloper
-Simplest case. Feed height, support height, horizontal distance, azimuth → wire length and elevation angle derived via Pythagorean relation. No sag — treated as taut. This is the correct default for most field slopers since paracord/nylon halyards are usually tensioned enough that catenary droop is a second-order effect relative to overall pattern.
+### 3.1 Why one model
+The four v1 geometry types turned out to be special cases of the same thing:
 
-### 3.2 Inverted-V End-Fed
-Modeled as three points: apex (mast top) plus two independently-specified legs (azimuth + horizontal distance + end height each). Deliberately **not** constrained to be collinear (i.e., leg 2 azimuth is not forced to `leg1_azimuth + 180`) — real support trees are essentially never positioned to allow a perfectly straight inverted-V, and forcing collinearity would make the tool less useful for actual field conditions. Default value approximates a straight line but is user-editable.
+| v1 type | In the v2 model |
+|---|---|
+| Straight sloper | one wire, 2 supports, zero slack |
+| Sagging sloper | one wire, 2 supports, slack > 0 |
+| Inverted-V | one wire, 3 supports (peak in the middle), slack 0 or > 0 on either side |
+| Inverted-L | one wire, 3 supports, first span vertical (both supports at d=0) |
+| Bent inverted-V | two wires; the second attached to the first wire's apex support |
+| Counterpoise fan | a fan element attached to a support |
 
-> Caveat: the side-profile SVG projects points onto a single horizontal axis (signed by dot product with the far-end direction). That projection is a good visual approximation when the legs are near-collinear, but gets visually misleading for a strongly bent V (e.g. legs 90° apart) — the 2D side view is inherently lossy for a genuinely 3D bent shape. The coordinate table and export are unaffected; this is a diagram-only limitation.
+### 3.2 Scene structure
+```
+scene = { elements:[...], feedEl:<wire id>, seq, wireN, fanN }
 
-### 3.3 Sagging Sloper (catenary)
-This is the most mathematically involved piece and the one most likely to need future refinement — documenting the derivation here since it's not obvious from the code alone.
+wire: { id, kind:'wire', name, attach:null | {el,idx}, az,
+        supports:[{d,z}, ...],   // >= 2; supports[0].d == 0
+        slack:[...] }            // one per span (between neighbouring supports)
 
-**Inputs:** feed height `z1`, anchor height `z2`, horizontal span `l`, and *actual* wire length `s` (which must exceed the straight-line distance — the excess is the slack that produces sag).
+fan:  { id, kind:'fan', name, attach:{el,idx}, n, len, zEnd, centerAz, spread }
+```
+- A **wire** runs along a single azimuth through its **supports**. Each support has a horizontal distance from the wire's start and a height. (Distances are kept non-decreasing; negative distances are deliberately not forbidden by the data model, to leave room for dipoles — Section 5.)
+- Each **span** between neighbouring supports has its own **slack**: extra wire length beyond the straight chord. Zero slack means a taut straight wire. Positive slack means a catenary sagging between those two supports. This is per span, not per wire and not per support, so a peak in the middle with a sagging arc to an anchor on each side is just three supports with slack on both spans.
+- A vertical span (both supports at the same distance) is always taut — it has nothing to sag.
+- **Attach**: `null` means the wire starts at the origin. `{el, idx}` means it starts at support `idx` of an earlier wire, at that support's height (the attached wire's own `supports[0].z` is ignored by the solver and mirrored back into state for display). Attach references only point at *earlier* elements, so positions resolve in one pass with no cycles. This is how a bent V, or a counterpoise that must share the main antenna's feed point, is expressed.
+- A **fan** is a generator of N straight radials from its attach point, evenly spread across an arc. It deliberately has no supports or sag (the accuracy loss is minimal for counterpoises). `len` is the radial's *cut length*; its horizontal reach follows from the height drop between the attach point and the radial end (`sqrt(len² − dz²)`), so the wire you cut equals the wire modeled.
+- **Feed / source**: one wire is the source wire (default: the first). The MMANA source goes at the beginning of that wire's first sub-wire. Feeding mid-wire (dipoles) is not offered yet.
+- `sanitizeScene()` repairs invariants after any edit: at least 2 supports, slack array length, `supports[0].d = 0`, attach references valid and pointing backwards, a valid feed wire. Removing a wire detaches dependants (they fall back to the origin, fans re-attach to the first wire); inserting/removing supports renumbers attach indexes.
+
+### 3.3 Catenary between two supports
+The most mathematically involved piece; documenting the derivation here since it's not obvious from the code alone.
+
+**Inputs (per sagging span):** horizontal span `l`, height difference `h = z₂ − z₁`, and *actual* wire length `s = chord + slack`, where `chord = sqrt(l² + h²)`.
 
 **Governing relation** (catenary between two points of unequal height, arc length constraint):
 ```
-s² - h² = 4a² sinh²(l / 2a)        where h = z2 - z1
+s² - h² = 4a² sinh²(l / 2a)
 ```
-Solved numerically for the catenary parameter `a` via bisection (no closed form). Verified against numerical arc-length integration during development — bisection converges reliably because the LHS is monotonic in `a` over the valid domain (diverges as `a→0`, approaches `l²` as `a→∞`).
+Solved numerically for the catenary parameter `a` via bisection (`solveCatenaryA`; no closed form). Verified against numerical arc-length integration during development — bisection converges reliably because the LHS is monotonic in `a` over the valid domain (diverges as `a→0`, approaches `l²` as `a→∞`). The bisection's upper bound is doubled until it actually brackets the root (a fixed bound fails as slack → 0 and `a` grows without bound).
 
-**Vertex (lowest point) location**, relative to the feed end:
+**Vertex (lowest point) location**, relative to the span's start:
 ```
 x_v = (l/2) - a * asinh( h / (2a * sinh(l/2a)) )
 ```
-
-**Curve equation**, with `C` chosen so `z(0) = z1`:
+**Curve**, with the constant chosen so the span starts at its first support:
 ```
-z(x) = a * cosh((x - x_v)/a) + C
-C = z1 - a * cosh(x_v / a)
+z(x) = a * cosh((x - x_v)/a) + C,     C = -a * cosh(x_v / a)       (z relative to the span start)
 ```
+**Output:** 11 waypoints (10 sub-wires) per sagging span, stepped evenly in **horizontal x**, not arc length. For realistic sag on typical POTA spans, even horizontal stepping gives adequately uniform sub-wire lengths for NEC purposes, and it avoids inverting the arc-length integral. Candidate refinement for steep/short spans (Section 5). Span endpoints are forced exactly onto the supports so adjacent spans share bit-identical junction points (this is what lets `findConnection` chain them).
 
-**Output:** 11 waypoints (10 segments), stepped evenly in **horizontal x**, not arc length. This is a deliberate simplification — for realistic sag magnitudes on typical POTA spans, even horizontal stepping gives adequately uniform segment lengths for NEC modeling purposes, and it avoids the added complexity of arc-length parametrization (which requires inverting the arc-length integral — solvable but not yet justified by the accuracy gain). **Flagged as a candidate refinement if used for very short/steep verticals where segment non-uniformity would become significant** (see Section 5).
+**Guards:** if slack is so large the curve overflows to non-finite values, the span falls back to taut and a "sag-failed" warning is shown. After solving, any wire whose lowest point is below Z = 0 raises a "dips below ground" warning.
 
-> **Fixed (v1.1):** `solveCatenaryA`'s bisection bounds were not validated against the root-bracketing precondition before iterating. Near the boundary where slack is very small (wire only slightly longer than the straight-line distance), `a` grows very large and the old fixed `hi = 1000*l` bound could fail to bracket the true root. `hi` is now doubled in a loop until `f(hi) < 0` actually holds before bisecting. Covered by the "near-zero slack" test in [tests/unit-geometry.html](../tests/unit-geometry.html).
+**Why this matters physically:** a two-point straight-line model of a drooping wire misrepresents current-distribution geometry — the actual wire is longer than the chord and takes a different path through space, which affects feedpoint impedance and pattern, especially as sag becomes electrically significant at higher frequencies.
 
-**Why this matters physically:** a two-point straight-line model of a drooping wire misrepresents current distribution geometry — the actual wire is longer than the chord and takes a different path through space, which affects feedpoint impedance and pattern, especially as sag becomes electrically significant at higher frequencies.
+### 3.4 Counterpoise fan
+N radials fanned evenly across a total spread angle, centered on a chosen azimuth, all sharing the attach point (so a counterpoise attached to a sloper's feed automatically shares its height and position — no more matching a separate "attach height" by hand). Straight/taut, on-ground (`zEnd = 0`) or elevated.
 
-### 3.4 Counterpoise Fan
-N radials fanned evenly across a configurable total spread angle, centered on a chosen azimuth, all sharing a single attach point (which may differ in height from the main antenna feedpoint — e.g., a ground stake near the base of a mast). Straight/taut, no sag modeling. Supports both on-ground (`z_end = 0`) and elevated counterpoise configurations.
+> **Fixed (v1.1):** at `spread = 360`, dividing by `n−1` made the first and last radial land on the same bearing. A full-circle spread now divides by `n`. Covered by tests in both test pages.
 
-> **Fixed (v1.1):** at `spread = 360`, the fan-angle formula `spread/(n-1)` used to cause the first and last radial to land on the same bearing (they're 360° apart, i.e. identical), rather than producing an even N-way star — e.g. `n=4, spread=360` produced bearings at 0°/120°/240°/360°(=0°), an effective 3-way spacing with a duplicated radial instead of 4 radials at 90°. Full-circle spread (`spread === 360`) now divides by `n` instead of `n-1`. Covered by the "360° spread bug fix" tests in both [tests/unit-geometry.html](../tests/unit-geometry.html) and [tests/system-app.html](../tests/system-app.html).
+### 3.5 Export formats
+Three formats, toggled in the export panel, all generated from the one merged, ordered wire list (elements in order; each wire's sub-wires in order along the wire):
 
-### 3.5 Export Formats (v1.2–v1.3)
-
-Three export formats, toggled in the export panel:
-
-- **Generic** (original) — a minimal tab-separated `label / X1 Y1 Z1 / X2 Y2 Z2` table intended for manual paste into any wire-entry table.
-- **EZNEC** (v1.2) — approximates the layout of EZNEC Pro/2+'s own "Wires" report (the same shape as printed/saved text output from EZNEC itself), including:
-  - The same two header rows.
-  - `X,Y,Z` coordinates per endpoint, formatted like EZNEC's own report — variable precision (6 significant figures, no forced decimal places) via `eznecNum()`, not the app's usual fixed-2-decimal `fmt()`.
-  - **Connection strings** (`W{n}E{1|2}`): `findConnection()` scans all other wires in the model for a coincident endpoint (within `1e-6` tolerance) and reports the first match, or blank if the endpoint is free (a feedpoint or open wire tip). This correctly chains the Sagging Sloper's 10 segments end-to-end, links the Inverted-V's shared apex point, and leaves genuinely free ends (feedpoints, wire tips) blank.
-  - **Trailing per-wire columns** (`Dia (in)`, `Segs`, insulation, wire loss) are fixed hardcoded defaults (`#10`, `2` segs, `1 0 0 0 1`) — not user-editable, per design decision. Only geometry (coordinates + connections) is generated; these constants exist so the row shape matches EZNEC's report.
-
-  > **Caveat — multi-way junctions:** `findConnection()` reports only the *first* other wire found sharing a point. For a simple two-wire junction (a chain link, an inverted-V apex) this is unambiguous and correct. For 3+ wires sharing one point — e.g. a counterpoise fan, where every radial's feed end shares the same coordinate — EZNEC's own convention for how it labels a 3+-way junction in this report isn't something we've been able to verify without EZNEC itself, so treat the connection string for those cases as best-effort/approximate. The coordinates themselves are unaffected either way.
-
-  > **Caveat — column widths:** field widths approximate the visual shape of a real EZNEC report closely enough to be immediately recognizable, but are not guaranteed to be byte-for-byte identical to EZNEC's own internal padding (which wasn't reverse-engineered to the exact character; going by a general "columns ~5 spaces apart" shape instead of exact width forensics). If exact column alignment turns out to matter (e.g. for a strict re-import parser), revisit this.
-
-- **MMANA** (v1.3) — generates a real MMANA-GAL `.maa`-format body (`***Wires***` / `*** Source ***` / `*** Load ***` / `*** Segmentation ***` / `*** G/H/M/R/AzEl/X ***` sections), reverse-engineered from three real `.maa` sample files plus the official MMANA-GAL Basic manual (which happened to include a fully-annotated worked example — see the manual's Segmentation section, page 6). Field semantics confirmed from those sources:
-  - `Wires`: `X1,Y1,Z1,X2,Y2,Z2,R,SEG` per wire — **X/Y/Z are always in meters** regardless of the app's active display unit (there's no per-file unit field in `.maa`, unlike EZNEC's dynamic `(ft)`/`(m)` header), converted explicitly via `toMeters()`. `R` is wire *radius* (not diameter) in meters — hardcoded to the same assumed `#10` AWG gauge as the EZNEC export (`WIRE_RADIUS_M`, so both exporters can't silently drift onto two different assumed gauges). `SEG = -1` is MMANA-GAL's own recommended default (tapering segmentation).
-  - `Source`: a single source is placed at wire 1's beginning (`w1b`) for every geometry type, matching how the sample Sloper/Inverted-V-shaped files place their source — including Counterpoise Fan, even though a counterpoise fan isn't really a standalone radiator in practice (see caveat below).
-  - `Load`: always `0` (no loads modeled by any of our geometry types).
-  - `Segmentation` / `G/H/M/R/AzEl/X`: fixed constants (`400,40,2.0,1` and `2,0.0,1,50.0,120,60,0.0`) matching what was identical across all three real sample files provided.
-  - **Frequency (MHz)**: a small always-visible number input in the export panel (`mmanaFreqInput`, default `14.0`) — the one genuinely new required field, since none of our geometry math is frequency-dependent and there's no way to derive a sensible default from geometry alone. (This also finally uses the `input[type="number"]` CSS rule that existed in the file from the start but was unused until now.)
-
-  > **Caveat — counterpoise source placement:** a counterpoise fan on its own isn't really a standalone antenna (it's normally a ground system attached to some other radiator's feedpoint) — giving it a nominal source keeps the exported file a valid, loadable NEC model by itself, but if merging these wires into a larger model in MMANA, delete the generated source/leave only the wires.
-  > **Caveat — line endings:** real `.maa` files use CRLF (`\r\n`). This can't actually be preserved through the export `<textarea>` — the HTML spec's "API value" algorithm for `<textarea>` normalizes `\r\n` to `\n` on the way in, so LF is the best achievable here regardless of what's requested. (Confirmed by direct testing, not assumption — see the "MMANA export format" tests in [tests/system-app.html](../tests/system-app.html), which split on `\n` for exactly this reason.)
+- **Generic** — tab-separated `label X1 Y1 Z1 X2 Y2 Z2`, fixed 2-decimal coordinates in the current unit.
+- **EZNEC** — approximates the layout of EZNEC Pro/2+'s own "Wires" report (same two header rows, variable-precision 6-significant-figure coordinates via `eznecNum()`, `W{n}E{1|2}` connection strings via `findConnection()`, fixed trailing columns `#10 / 2 segs / 1 0 0 0 1`).
+  > **Caveat — multi-way junctions:** `findConnection()` reports only the *first* other wire found sharing a point (coincidence within `1e-6`). For a chain link or a peak that is unambiguous. For 3+ wires at one point — a counterpoise fan attached to a feed, where the main wire's first end and every radial's first end coincide — EZNEC's own convention for labeling it isn't something we've verified, so treat that connection string as best-effort. The coordinates themselves are unaffected.
+  > **Caveat — column widths** approximate a real EZNEC report closely enough to be recognizable, not byte-for-byte.
+- **MMANA** — a `.maa`-format body (`***Wires***` / `*** Source ***` / `*** Load ***` / `*** Segmentation ***` / `*** G/H/M/R/AzEl/X ***`), reverse-engineered from three real `.maa` samples and the MMANA-GAL Basic manual. Field semantics:
+  - `Wires`: `X1,Y1,Z1,X2,Y2,Z2,R,SEG`, joined with `,\t`. X/Y/Z are **always meters**. `R` is wire *radius* in meters (`WIRE_RADIUS_M`, #10 AWG, shared with the EZNEC `#10` label). `SEG` is a segmentation *mode code*, not a count: `-1` = tapering (recommended default); it must be a bare integer.
+  - `Source`: `w{k}b` where `k` is the 1-based number of the first sub-wire of the chosen **source wire** (Source selector in the export panel, default: the first wire). Delete or move it in MMANA if merging into a model with its own source.
+  - `Load`: always `0`. `Segmentation` / `G/H/M/R/AzEl/X`: fixed constants copied from MMANA-GAL's bundled sample files.
+  - **Frequency (MHz)** number input (default 14.0) feeds line 3 of the file.
+  > **Caveat — line endings:** real `.maa` files use CRLF, but `<textarea>.value` normalizes `\r\n` to `\n`, so LF is all the export box can hold.
 
 ---
 
 ## 4. Architecture
 
-- **Single HTML file**, no external JS framework — vanilla DOM manipulation, inline SVG for diagrams. Chosen over React for this tool because the interaction model is simple (form inputs → recompute → re-render) and doesn't benefit from component state management overhead.
-- **State model:** one JS object per geometry type (`state.sloper`, `state.invv`, `state.sag`, `state.counterpoise`), holding all parameters for that type independently — switching tabs doesn't lose your work on another tab.
-- **Render pipeline (v1.1):** split into `renderInputs()` (rebuilds the `#wgcInputs` panel HTML — only called on tab switch, unit toggle, and initial load) and `renderOutputs()` (table, summary, sag warning, export, SVGs — called on every slider `input` event). `render()` just calls both, for the tab/unit/init call sites.
-
-  > **Fixed (v1.1):** previously a single `render()` rebuilt the entire `#wgcInputs` panel HTML on every `input` event, which replaced a slider's own DOM node on every tick of a drag — in some browsers this can interrupt/jank an in-progress drag gesture. Because `renderOutputs()` never touches `#wgcInputs`, dragging a slider can no longer destroy the element the user is actively dragging. Covered by the "Slider-drag render (jank fix)" test in [tests/system-app.html](../tests/system-app.html), which asserts the same DOM node survives multiple `input` events.
-- **Geometry builders** (`buildSloper`, `buildInvV`, `buildSag`, `buildCounterpoise`) are pure functions of a passed-in state slice (`buildSloper(state.sloper)`, etc.) returning a common shape: `{ points: [...], wires: [...], summary: [...] }`, where each summary entry is `[label, rawNumericValue, kind]` (`kind` is `'length' | 'angle' | 'count' | 'raw'`) rather than a pre-formatted unit-suffixed string — `renderSummary()`/`formatSummaryValue()` apply the current unit/decimal formatting at render time. This decoupling (added in v1.1) is what makes the builders testable in isolation: a test can call `buildCounterpoise({ n:4, spread:360, ... })` directly with arbitrary inputs instead of only ever reading live `state`. **Any new geometry type should conform to this same return shape** to slot into the existing render pipeline without touching the renderers.
-- **Testability hook:** `window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA, findConnection, eznecNum, mmanaNum }` is set near the end of the script — purely additive, no effect on the app. [tests/unit-geometry.html](../tests/unit-geometry.html) loads the real `index.html` in an iframe and calls these directly, so tests can never drift from what's actually shipped (see Section 7).
-- **Unit conversion:** `lengthFieldSpecs` (feet-based `[min, max, step]` per length field) is now the single source of truth for both slider bounds (via `lenField()`/`lenRange()`) and `convertAllUnits()` — previously these lived in two separate places (slider bounds hardcoded in `fieldsHTML()`, conversion keys in a separate list in `convertAllUnits()`) and could drift; a field added to only one would either fail to convert or fail to get a unit-scaled slider range.
-
-  > **Fixed (v1.1):** slider `min`/`max`/`step` used to stay in feet-scale numbers even after toggling to meters (e.g. `step="1"` unchanged), so a converted value like `10.668 m` would get silently snapped by the browser to the nearest whole step — `11`. Slider bounds are now scaled by `lenRange()` to the active unit, and `convertAllUnits()` snaps the converted value exactly onto the new unit's step grid (via `roundToStep()`) instead of an arbitrary fixed-decimal rounding, so the browser never needs to re-snap it. Covered by the "regression guard" tests in the Unit toggle suite of [tests/system-app.html](../tests/system-app.html) — this bug was actually caught *by* writing that test, not by manual review.
-- **Version/build indicator (v1.4):** `APP_VERSION`/`APP_BUILD` constants near the top of the script, rendered into `#wgcVersion` (bottom-right corner, subdued) as `"vX.Y.Z · build N"`. **Bump `APP_BUILD` on every edit to `index.html`, no matter how small** — its entire purpose is letting a glance at the running page confirm you're not looking at a stale cached copy, which cost real debugging time more than once during development (a stale browser tab, then a stale test iframe, then what looked like a live bug that was actually a stale local/hosted copy). Bump `APP_VERSION` for the more meaningful milestones already tracked in this doc's Status line.
-- **Copy button clipboard fallback (v1.4.1):** `navigator.clipboard.writeText()` requires a "secure context" (HTTPS or `localhost`) and silently does nothing — no error, no visible feedback — when it's unavailable or rejects, which happens when this single-file tool is opened directly via `file://` (a completely normal way to use it, since that's the whole point of a no-server single-file artifact). The Copy button now falls back to the legacy `document.execCommand('copy')` (which doesn't have the same secure-context restriction) if the Clipboard API fails, and — if even that fails — shows a visible `"Select text & Ctrl+C"` failure state instead of silently doing nothing. Covered by mocked success/fallback-success/failure tests in [tests/system-app.html](../tests/system-app.html) (mocked because the real Clipboard API's availability is inherently environment-dependent, which would otherwise make the test flaky).
+- **Single HTML file**, no framework, no build step — vanilla DOM and inline SVG. Chosen because the interaction model is simple (form inputs → recompute → re-render).
+- **State:** one `scene` object (Section 3.2). Presets (`PRESETS`) are just functions that build a scene; the old tabs survive as "Start from preset" buttons that replace the scene.
+- **Solver:** `solveScene(scene)` is a pure function returning `{ elements, points, wires, summary, warnings, firstSub, feed }`. `points` are labeled rows for the table; `wires` is the merged, ordered sub-wire list everything else consumes; `summary` entries are `[label, rawValue, kind]` (`'length' | 'angle' | 'count' | 'raw'`) formatted at render time; `firstSub[elId]` is the index of an element's first sub-wire (for the MMANA source). It runs `solveRaw` once, and a second time shifted if the feed isn't already at the origin.
+- **Render pipeline:** `renderInputs()` rebuilds the parameter panel (preset load, structural edit, unit toggle, or when a typed value needs a different slider range); `renderOutputs()` (table, summary, warnings, export, three views) runs on every input event and never touches the panel, so dragging a slider can't destroy the node being dragged. `syncControls()` pushes state into every other control after cascaded changes (support-order clamping, mirrored attach heights).
+- **Number box + slider per field** (`fieldHTML()`): each control carries `data-el`, `data-field`, `data-idx`, `data-role="num"|"rng"`. Typing updates state immediately and moves the slider; `change` (Enter/blur) normalizes the value (clamp ≥ 0, azimuth wraps to 0–360) and, only if that value wants a different slider range, rebuilds the panel. The stored value is whatever was typed — sliders only steer.
+- **Slider ranges** (`FIELD_SPECS`, `sliderSpec`): native `[min, max, step]` per unit (e.g. distance: 150 ft / step 1, or 50 m / step 0.5 — not feet-in-disguise). If a value exceeds 90% of the default max, the range becomes `niceCeil(1.5 × value)` (a 1/2/5 × 10ᵏ number) with a proportionally larger round step. Ranges are recomputed only at panel rebuild, never mid-drag. Presets built in meters are rounded to 5 cm.
+- **Views:**
+  - **3D** (`render3D`): orthographic projection, SVG, drag to rotate / wheel to zoom / Top-Side-Reset buttons. The camera sits at compass bearing `yaw`, elevation `pitch`; screen-right `r = (−cos yaw, sin yaw, 0)`, screen-up `u = (−sin yaw sin pitch, −cos yaw sin pitch, cos pitch)`, so yaw 180 / pitch 90 is a plan view with N up. Draws a **ground square as four lines on Z = 0** (a true square centered under the model's footprint, sized to the larger footprint dimension and a share of the height; deliberately not an opaque fill), N/E labels, dashed drop lines from supports to the ground, and a ring on the feed.
+  - **Side profile**: projects onto the vertical plane along the *first wire's* azimuth (title says which). Wires in other directions are foreshortened — the 3D view shows them true. Round-number gridlines and tick labels in the current unit.
+  - **Plan**: centered on the model's bounding box, round-number range rings around the feed with labels.
+- **Testability hook:** `window.WGC = { az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection, eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec, build*Export, getScene, getUnit, loadPreset }` — additive, no effect on the app. The test pages load the real `index.html` in an iframe, so tests can never drift from shipped code.
+- **Version/build indicator:** `APP_VERSION`/`APP_BUILD`, rendered bottom-right as `vX.Y.Z · build N`. **Bump `APP_BUILD` on every edit to `index.html`, no matter how small** — it exists so a glance confirms you're not looking at a stale cached copy, which caused repeated phantom-bug confusion during development. Bump `APP_VERSION` for milestones.
+- **Copy button:** tries `navigator.clipboard.writeText`, falls back to `document.execCommand('copy')`, and shows a red "Select text & Ctrl+C" state if both fail (the Clipboard API needs a secure context, so it fails silently on `file://`).
 
 ---
 
-## 5. Known Limitations / Candidate Extensions
+## 5. Known Limitations / Roadmap
 
-Roughly in order of likely value for future sessions:
+Roughly in order of likely value:
 
-1. **Native format export** — generate actual EZNEC `.ez` or NEC-2 `.nec` deck syntax (GW cards with wire radius/segmentation), or an MMANA `.maa` file verified to actually round-trip through MMANA-GAL itself. Partially addressed: the EZNEC (v1.2) and MMANA (v1.3) export formats approximate those tools' own report/file shapes (coordinates, connection strings, section structure), reverse-engineered from real sample files plus available documentation — but neither has been verified against the real applications, and wire diameter/segments/segmentation parameters are fixed defaults rather than derived from a frequency/segmentation calculation (ties into item 6 below).
-2. **Saved presets/scenario library** — persist named configurations (e.g., "Site A — pecan tree sloper", "Site B — inverted V") so the pre-planned "go-to geometries" from the original requirement can actually be stored and recalled, not just computed fresh each session. Given this is now a standalone repo/static page rather than a claude.ai artifact, this belongs as `localStorage`-backed presets (and/or exportable/importable JSON scenario files) rather than the artifact persistent-storage API.
-3. **Numeric input alongside sliders** — the CSS had an unused `input[type="number"]` style since v1; the MMANA export's Frequency field (v1.3) is the first thing to actually use it. Pairing a synced number field with each *geometry* range slider (not just the one-off frequency field) would still allow more precise entry (e.g. dialing in an exact compass bearing) instead of drag-only.
-4. **Sag modeling for inverted-V legs and counterpoise radials** — currently only the dedicated "Sagging Sloper" tab models catenary droop; the same math could apply to inverted-V legs (which also sag in practice) and elevated counterpoise runs.
-5. **Arc-length-uniform waypoint stepping** for the catenary case, if segment uniformity becomes a real accuracy concern for steep/short spans.
-6. **Wire diameter / segmentation guidance** — currently coordinates only; could add a recommended NEC segment count per wire based on frequency (segments should be well under 0.1λ at the highest frequency of interest) and a default wire radius field for direct GW-card generation (ties into item 1).
-7. **Ground/counterpoise coupling check** — a sanity warning if counterpoise radials and main wire geometry pass too close to each other (risk of unintended coupling not represented in a simple wire-geometry tool).
-8. **Multi-band segment-count validation** — warn if a given wire length modeled with only 1-2 segments would be too coarse at the user's intended operating frequency.
-
-All bugs and cleanups previously tracked here (counterpoise 360° spread, slider-render jank, catenary bisection bounds, dead code, unit-conversion snapping) were fixed in v1.1 — see Section 4 for what changed and Section 7 for how it's tested.
+1. **Dipoles (offset or symmetric)** — a feed somewhere along a wire, at a segment end. The model already allows it in principle (feed is just a marker on a support; the whole scene is shifted so the feed is the origin; supports split spans so every support is a sub-wire endpoint; negative support distances are not forbidden by the data). Needs: a UI for placing the source on any support, source syntax for a wire end/middle in MMANA (`w{k}e` etc. — to be verified against real files before shipping), and a symmetric/offset convenience.
+2. **Sloped / offset ground plane** — ground is currently the flat plane Z = 0 (drawn as four lines in the 3D view). Make it more flexible for sites on a slope or a roof: ground elevation/tilt as a scene property, heights measured above local ground, and the 3D ground outline following it. (Logged here deliberately as a future revision.)
+3. **Native / verified file export** — `.ez`, `.nec`, or an `.maa` verified to round-trip through MMANA-GAL; offer a Download button (a blob download works in plain HTML). Derive segmentation from frequency instead of fixed defaults.
+4. **Saved scenarios** — persist named configurations (`localStorage` and/or JSON export/import) so the "go-to geometries" can be stored and recalled. Beyond the built-in presets.
+5. **Arc-length-uniform catenary waypoints**, if segment uniformity matters for steep/short spans.
+6. **Free tails** — a straight wire end that continues past the last support (dangling end). Dropped from v2.0 to avoid an under-defined end point; needs a total length and end height.
+7. **Wire gauge / segmentation guidance** — wire radius is fixed at #10 AWG (EZNEC `#10`, MMANA `R = 0.0509 in`); radius for #16 is 0.0254 in, #22 is 0.0127 in. Recommend a segment count per wire from frequency; warn when too coarse (EZNEC export is fixed at 2 segments per wire).
+8. **Counterpoise/main-wire coupling check** — warn if radials pass too close to the main wire.
+9. **Multi-select / reorder elements** and a combined "source on any support" picker.
 
 ---
 
 ## 6. File Reference
 
-- [`index.html`](../index.html) — the tool itself, self-contained, opens in any browser or serves directly via GitHub Pages. Still a single file — the `window.WGC` testability hook is the only thing added for tests, and it's inert for normal use.
+- [`index.html`](../index.html) — the tool itself, self-contained, opens in any browser or serves via GitHub Pages.
 - [`tests/`](../tests/) — unit and system tests; see Section 7.
-- This document — the design record, so rationale (especially the catenary derivation, the "why not collinear" decision on the inverted-V) doesn't have to be re-derived from reading code alone. Keep it in sync with `index.html` as the tool evolves.
+- This document — the design record; keep it in sync with `index.html`.
+- [`HANDOFF.md`](../HANDOFF.md) — session-transfer summary for a fresh agent.
 
 ---
 
 ## 7. Testing
 
-No build step, no npm dependency, matching the artifact itself — tests are plain HTML pages you open in a browser.
+No build step, no npm dependency — tests are plain HTML pages you open in a browser.
 
-- **[tests/harness.js](../tests/harness.js)** — ~70-line hand-rolled `suite()`/`test()`/`assert` framework shared by both test pages, rendering a pass/fail dashboard into the page.
-- **[tests/unit-geometry.html](../tests/unit-geometry.html)** — loads the real `../index.html` in a hidden iframe and calls its exposed `window.WGC` pure functions directly (no copied/duplicated source, so tests can't silently drift from shipped behavior). Covers the sloper/inverted-V math, the catenary governing relation (including the near-zero-slack edge case), the counterpoise 360° spread fix, `eznecNum()`/`findConnection()` (v1.2), and `mmanaNum()`'s decimal-forcing and near-zero-noise snapping (v1.3).
-- **[tests/system-app.html](../tests/system-app.html)** — loads the real `../index.html` in a visible iframe and drives it like a user (clicking tabs, dispatching real `input` events on sliders) then inspects the resulting DOM. Covers tab switching, the slider-drag jank fix (asserts the same DOM node survives a drag), sag-warning reactivity, the counterpoise fix through the real export pipeline, unit-toggle conversion (including a regression guard for the slider-snapping bug above), the EZNEC export format toggle end-to-end (v1.2), and the MMANA export's section structure, frequency-field wiring, SEG-formatting regression guard, and unit-independence (v1.3).
+- **[tests/harness.js](../tests/harness.js)** — ~70-line hand-rolled `suite()`/`test()`/`assert` framework shared by both pages, rendering a pass/fail dashboard.
+- **[tests/unit-geometry.html](../tests/unit-geometry.html)** — loads the real `../index.html` in a hidden iframe and calls the exposed `window.WGC` functions with literal scene objects. Covers straight wires, peaks and an L, catenary governing relation (incl. near-zero slack), slack → sag (point/wire counts, exact support heights, both-sides sag with one shared peak, vertical span taut, below-ground warning), attach chaining and bent V, feed-at-origin shifting, fan behaviour (360° fix, true cut length, attach point), `findConnection`, number formatters, and the round-number helpers.
+- **[tests/system-app.html](../tests/system-app.html)** — drives the real DOM: presets, slider-drag node survival, number-box entry (exact storage, slider range widening and returning to default, azimuth wrap, clamping, support ordering), unit toggle (exact round trip, native steps, metric presets), adding/inserting/removing wires, supports and fans, the fan through the export pipeline, warnings, the EZNEC/MMANA/generic exports end to end (merged wire list, source selector, meters-always), the 3D ground square and camera buttons, scale labels, and the copy button's fallbacks.
 
-**To run:** open either file directly in a browser, or serve the repo root with `python -m http.server` and open `http://localhost:8000/tests/unit-geometry.html` (a plain `file://` open works in most browsers too, but some restrict script access across `file://` iframe boundaries — serving avoids that). Results render on the page; `window.__TEST_SUMMARY__` holds a `{total, passed, failed}` object for automated checking. Both test pages set the iframe's `src` from JS with a `?_t=Date.now()` cache-buster rather than a static HTML attribute — a static `src="../index.html"` was observed during development to serve a stale cached copy of the app across repeated test-page reloads, which can make a just-fixed bug look unfixed (or a freshly-introduced bug look absent) until you notice the iframe itself needs busting, not just the outer test page's URL.
+**To run:** serve the repo root with `python -m http.server 8420` and open `http://localhost:8420/tests/unit-geometry.html` and `.../system-app.html` (a plain `file://` open works in most browsers but some restrict script access across iframes). Results render on the page; `window.__TEST_SUMMARY__` holds `{total, passed, failed}`. Both pages set the iframe's `src` from JS with a `?_t=Date.now()` cache-buster — a static `src` was observed to serve a stale copy of the app.
+
+---
+
+## 8. History
+
+- **v1.0** — four tabs (straight sloper, inverted-V, sagging sloper, counterpoise fan), sliders only.
+- **v1.1** — fixed the counterpoise 360° spread bug, the slider re-render jank on every drag tick, catenary bisection bracketing near zero slack, unit-toggle snapping; added the first test suite.
+- **v1.2 / v1.3** — EZNEC "Wires" report export; MMANA `.maa` export with frequency field.
+- **v1.4** — version/build indicator; Copy-button clipboard fallback.
+- **v2.0** — this rewrite: one wires-and-supports model replacing the tabs; per-span slack (so any wire can sag, closing the old "sag for inverted-V legs" item); multi-element scenes (a counterpoise attaches to a support instead of being matched by hand) with one merged export and a source selector; number boxes beside every slider; unit-native, value-adaptive slider ranges; 3D view with ground square; round-number scale labels on all views; feed-at-origin convention made true for every geometry; radial `len` now means cut length.

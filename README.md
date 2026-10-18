@@ -42,66 +42,69 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 
 ## Features
 
-- **4 geometry types**, each with independent, non-destructive state:
-  - **Straight sloper** — single wire, one support, taut
-  - **Inverted-V end-fed** — apex over a mast/tree, two independently
-    positioned legs (deliberately *not* forced collinear — real tree pairs
-    rarely line up)
-  - **Sagging sloper** — same as a straight sloper, but modeled as a true
-    catenary curve from actual wire length (slack), not an idealized straight
-    line
-  - **Counterpoise fan** — N radials fanned across a configurable arc,
-    on-ground or elevated
-- **Feet / meters toggle** — converts stored parameter values on toggle, not
-  just display formatting, so switching units mid-edit never corrupts a model
-- **Live diagrams** — side-profile (elevation) and plan-view (compass-oriented,
-  N-up) sketches that update as you drag parameters
+- **One screen, one model.** A *wire* runs along a compass bearing through its
+  *supports* (a horizontal distance and a height each). The span between two
+  neighbouring supports is either taut, or - if you give it some **slack** -
+  hangs as a true catenary. That covers, with no mode switch:
+  - straight or sagging slopers (two supports),
+  - an inverted-V with a peak in the middle, taut or sagging on either side
+    (three supports),
+  - an inverted-L (first span vertical),
+  - bent, non-collinear V's (a second wire attached to the first wire's apex).
+- **Counterpoise fans** attach to any support, so a sloper and its counterpoise
+  live in one model and export as **one merged wire list** - no more pasting two
+  tables together and fixing wire numbers by hand. Radial length is the cut
+  length of the wire.
+- **Presets** to start from: Straight Sloper, Sagging Sloper, Inverted-V,
+  Sagging Inverted-V, Inverted-L, Sloper + Counterpoise.
+- **Slider *and* number box** on every field: drag for quick sketching, type for
+  exact values. Slider ranges are unit-native and widen automatically when you
+  type a larger number (a 100 m wire isn't stuck on a 50 m slider).
+- **Feet / meters toggle** converts the stored values exactly (35 ft is 10.668 m
+  and back again, with no rounding drift).
+- **Live views** - a rotatable **3D view** (drag, wheel, Top/Side/Reset) with a
+  ground outline at Z=0, plus side-profile and plan views, all with round-number
+  scale labels in the current unit.
+- **Warnings** when a sag dips below ground or a radial is too short for its
+  height drop.
 - **Three export formats**, toggled in the export panel:
-  - **Generic** — minimal tab-separated table for manual paste
-  - **EZNEC** — approximates the layout of EZNEC Pro/2+'s own "Wires" report,
+  - **Generic** - minimal tab-separated table for manual paste
+  - **EZNEC** - approximates the layout of EZNEC Pro/2+'s own "Wires" report,
     including `W{n}E{1|2}` connection strings that chain adjacent wires
-    together (e.g. the Sagging Sloper's 10 segments, or an Inverted-V's shared
-    apex point)
-  - **MMANA** — generates a real MMANA-GAL `.maa`-format body (Wires / Source /
-    Load / Segmentation / ground+pattern sections), with a small Frequency
-    (MHz) field since MMANA needs one and there's no way to derive it from
-    geometry alone
+  - **MMANA** - a real MMANA-GAL `.maa`-format body, with a Frequency (MHz)
+    field and a selector for which wire carries the source
 - Runs entirely client-side; nothing is sent anywhere
 
 ## Coordinate convention
 
-- **X = East, Y = North, Z = Up** (standard right-handed, ground-referenced —
+- **X = East, Y = North, Z = Up** (standard right-handed, ground-referenced -
   matches typical EZNEC/MMANA ground-plane convention)
-- **Feedpoint is always the origin** `(0, 0, z_feed)` — everything else is
-  positioned relative to it, matching how you'd actually stake out a site
-- **Azimuth** is entered as compass bearing in degrees from North (0° = N,
-  90° = E), matching ham convention rather than math convention
+- **The feedpoint is the origin** `(0, 0, z_feed)` - the start of the source
+  wire; everything else is positioned relative to it, matching how you'd
+  actually stake out a site
+- **Azimuth** is entered as compass bearing in degrees from North (0 = N,
+  90 = E), matching ham convention rather than math convention
+- **Distances** along a wire are horizontal (plan-view) distances from its start
 
 ## Known limitations
 
-- No ground-system loss, soil conductivity, or near-field ground modeling —
+- No ground-system loss, soil conductivity, or near-field ground modeling -
   output is geometry only, for import into a NEC-2 engine that handles the EM
-  solve.
-- The CounterPoise tab will output a table of wire segment coordinates - after setting
-  them up, you will likely want to append that list to the wire definitions for an
-  existing active-element definition. Remember to change the count of total wire
-  segments in the file too.
+  solve. Ground is drawn as the flat plane Z = 0.
 - The EZNEC and MMANA export formats approximate those tools' own file/report
   layouts closely, but neither is a byte-verified, directly re-importable
-  native deck (not tested against the actual EZNEC/MMANA applications — see
-  roadmap). Typically some cut/paste into a text files is needed.
+  native deck (not tested against the actual EZNEC/MMANA applications).
+  Typically some cut/paste into a text file is needed.
 - EZNEC-format connection strings for a point shared by 3+ wires (e.g. a
-  counterpoise fan's common feed point) are best-effort — see
-  [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats-v12v13)
-- No sag modeling yet for inverted-V legs or counterpoise radials (only the
-  dedicated Sagging Sloper tab will model catenary droop)
-- Sliders only, no precise numeric entry (a synced number input is on the
-  roadmap)
-- Note: In the Sloper tab, ignore the distance-to-support slider.
-  
-See [docs/DESIGN.md](docs/DESIGN.md) for the full design rationale — including
-the catenary derivation, the reasoning behind specific design choices, and the
-complete roadmap.
+  counterpoise fan's common attach point) are best-effort - see
+  [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats)
+- Counterpoise radials are straight (no sag); wire gauge is fixed at #10 AWG;
+  EZNEC export uses 2 segments per wire.
+- Not yet: dipoles (feed along a wire), sloped ground, saved scenarios, native
+  file download - see the roadmap in [docs/DESIGN.md](docs/DESIGN.md#5-known-limitations--roadmap).
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the full design rationale - including
+the catenary derivation and the complete roadmap.
 
 ## Testing
 

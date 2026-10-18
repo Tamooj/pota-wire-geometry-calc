@@ -108,7 +108,7 @@
   }
   .wgc-grid{
     display:grid;
-    grid-template-columns:280px 1fr;
+    grid-template-columns:360px 1fr;
     gap:18px;
   }
   @media (max-width:820px){
@@ -287,6 +287,106 @@
     resize:vertical;
   }
   body{ margin:0; background:#171b17; }
+
+  /* ---- v2: wire/support model UI ---- */
+  .wgc-presets{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    align-items:center;
+    margin-bottom:16px;
+  }
+  .wgc-presets .lbl{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--khaki-dim);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    margin-right:4px;
+  }
+  .wgc-btn{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    color:var(--khaki-dim);
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:600;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    padding:6px 10px;
+    cursor:pointer;
+    border-radius:3px;
+    transition:all .15s;
+  }
+  .wgc-btn:hover{border-color:var(--amber-dim); color:var(--khaki);}
+  .wgc-btn.small{padding:2px 7px; font-size:10px;}
+  .wgc-btn.danger:hover{border-color:var(--red-warn); color:var(--red-warn);}
+  .wgc-btn.add{border-style:dashed;}
+  .wgc-card{
+    background:#161a15;
+    border:1px solid var(--border);
+    border-left:3px solid var(--amber-dim);
+    border-radius:4px;
+    padding:10px 12px 4px 12px;
+    margin-bottom:12px;
+  }
+  .wgc-card.fan{border-left-color:var(--green-signal);}
+  .wgc-card-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:8px;
+    gap:8px;
+  }
+  .wgc-card-title{
+    font-family:'IBM Plex Sans Condensed', sans-serif;
+    font-weight:700;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--paper);
+  }
+  .wgc-sub-label{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--amber-dim);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin:10px 0 6px 0;
+    padding-top:6px;
+    border-top:1px solid var(--border);
+  }
+  .wgc-sub-label .btns{display:flex; gap:4px;}
+  select.wgc-select{
+    width:100%;
+    background:#12150f;
+    border:1px solid var(--border);
+    color:var(--paper);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    padding:5px 6px;
+    border-radius:3px;
+  }
+  .wgc-field .wgc-ctl{display:flex; gap:8px; align-items:center;}
+  .wgc-field .wgc-ctl input[type="number"]{width:84px; flex:none;}
+  .wgc-field .wgc-ctl input[type="number"]:disabled{opacity:0.55;}
+  .wgc-field .wgc-ctl input[type="range"]{flex:1; min-width:0;}
+  .wgc-field .wgc-ctl .wgc-unit{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--khaki-dim);
+    width:22px;
+    flex:none;
+  }
+  .wgc-add-row{display:flex; gap:8px; margin-bottom:6px;}
+  .wgc-svg-title-row{display:flex; justify-content:space-between; align-items:center;}
+  .wgc-svg-box svg.wgc-3d{cursor:grab; touch-action:none; user-select:none;}
+  .wgc-svg-box svg.wgc-3d:active{cursor:grabbing;}
+  .wgc-warnings:empty{display:none;}
+  .wgc-warnings .wgc-warn{margin:0 0 6px 0;}
 </style>
 </head>
 <body>
@@ -303,20 +403,29 @@
     </div>
   </div>
 
-  <div class="wgc-tabs" id="wgcTabs">
-    <button class="wgc-tab active" data-type="sloper">Straight Sloper</button>
-    <button class="wgc-tab" data-type="invv">Inverted-V End-Fed</button>
-    <button class="wgc-tab" data-type="sag">Sagging Sloper</button>
-    <button class="wgc-tab" data-type="counterpoise">Counterpoise Fan</button>
+  <div class="wgc-presets" id="wgcPresets">
+    <span class="lbl">Start from preset</span>
   </div>
 
   <div class="wgc-grid">
     <div class="wgc-panel" id="wgcInputs"></div>
 
     <div>
+      <div class="wgc-svg-box" style="margin-bottom:12px;">
+        <div class="wgc-svg-title wgc-svg-title-row">
+          <span>3D View (drag to rotate, wheel to zoom)</span>
+          <span style="display:flex; gap:4px;">
+            <button class="wgc-btn small" data-view="top">Top</button>
+            <button class="wgc-btn small" data-view="side">Side</button>
+            <button class="wgc-btn small" data-view="reset">Reset</button>
+          </span>
+        </div>
+        <svg id="svg3d" class="wgc-3d" viewBox="0 0 640 340" style="width:100%;height:auto;"></svg>
+      </div>
+
       <div class="wgc-diagrams">
         <div class="wgc-svg-box">
-          <div class="wgc-svg-title">Side Profile (elevation)</div>
+          <div class="wgc-svg-title" id="wgcSideTitle">Side Profile (elevation)</div>
           <svg id="svgSide" viewBox="0 0 320 220" style="width:100%;height:auto;"></svg>
         </div>
         <div class="wgc-svg-box">
@@ -325,6 +434,7 @@
         </div>
       </div>
 
+      <div class="wgc-warnings" id="wgcWarnings"></div>
       <div class="wgc-summary" id="wgcSummary"></div>
 
       <div class="wgc-panel">
@@ -333,9 +443,13 @@
       </div>
 
       <div class="wgc-panel" style="margin-top:12px;">
-        <div class="wgc-export-header">
+        <div class="wgc-export-header" style="flex-wrap:wrap; gap:8px;">
           <div class="wgc-panel-label" style="margin:0;border:none;padding:0;" id="wgcExportLabel">Plain-Text Export (tab-separated, paste into wire editor)</div>
-          <div style="display:flex; gap:8px; align-items:center;">
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <label style="display:flex; align-items:center; gap:4px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--khaki-dim);" title="Which wire the MMANA source (feed) is attached to.">
+              SOURCE
+              <select id="wgcSourceSelect" class="wgc-select" style="width:auto;"></select>
+            </label>
             <label style="display:flex; align-items:center; gap:4px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--khaki-dim);" title="Design frequency, used by the MMANA export (MMANA has no geometry-derived default for this).">
               FREQ
               <input type="number" id="mmanaFreqInput" value="14.0" min="0.1" max="3000" step="0.01" style="width:60px;">
@@ -363,171 +477,193 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v1.4.1';
+  const APP_VERSION = 'v2.0.0';
   const APP_BUILD = 2;
 
+  const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
   let unit = 'ft';
-  let type = 'sloper';
   let exportFormat = 'generic';
   let mmanaFreq = 14.0;
-
-  const state = {
-    sloper: { az:90, z1:4, z2:28, dist:35 },
-    invv:   { azApex:90, zApex:32, z1:4, d1:22, az2:270, z2:6, d2:18 },
-    sag:    { az:90, z1:4, z2:26, dist:30, wireLen:40 },
-    counterpoise: { n:4, len:25, zAttach:1, zEnd:0, centerAz:270, spread:140 }
-  };
-
-  // Single source of truth for every length-valued field's slider range,
-  // expressed in feet — used both to render unit-aware slider bounds and to
-  // drive unit conversion, so there's only one place to update when adding a
-  // new length field (previously bounds lived in fieldsHTML while the
-  // conversion key list lived separately in convertAllUnits, and could drift).
-  const lengthFieldSpecs = {
-    sloper: { z1:[0,50,0.5], z2:[1,80,0.5], dist:[1,150,1] },
-    invv: { zApex:[3,80,0.5], z1:[0,20,0.5], d1:[1,100,1], z2:[0,20,0.5], d2:[1,100,1] },
-    sag: { z1:[0,50,0.5], z2:[1,80,0.5], dist:[1,150,1], wireLen:[1,200,0.5] },
-    counterpoise: { len:[1,100,1], zAttach:[0,10,0.25], zEnd:[0,10,0.25] }
-  };
+  let scene = null;      // see "Scene model" below
+  let lastModel = null;  // most recent solveScene() result, for view-only redraws
+  const view3d = { yaw:165, pitch:25, zoom:1 };
 
   function uLabel(){ return unit==='ft' ? 'ft' : 'm'; }
   function fmt(v){ return (Math.round(v*100)/100).toFixed(2); }
+  function fmtIn(v){ return String(Math.round(v*1000)/1000); }
 
   function az2xy(az, r){
     const rad = az*Math.PI/180;
     return { x: r*Math.sin(rad), y: r*Math.cos(rad) };
   }
 
-  // Scales a [min,max,step] triple (specified in feet) into the current unit.
-  function lenRange(minFt, maxFt, stepFt){
-    const f = unit==='ft' ? 1 : 0.3048;
-    return [minFt*f, maxFt*f, stepFt*f];
+  // ---------- "Nice number" helpers (slider ranges, grid lines, scale bars) ----------
+  // Smallest 1/2/5 x 10^k that is >= x.
+  function niceCeil(x){
+    if(!(x>0)) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(x)));
+    for(const m of [1,2,5,10]) if(m*p >= x*(1-1e-12)) return m*p;
+    return 10*p;
   }
-
-  function roundToStep(value, min, step){
-    return min + Math.round((value-min)/step)*step;
-  }
-
-  // A length-valued slider field, with min/max/step looked up from
-  // lengthFieldSpecs and scaled to the current unit — this is what keeps a
-  // slider's step granularity from silently snapping a converted value to
-  // the nearest whole unit (e.g. 10.67 m snapping to 11) after a toggle.
-  function lenField(grp, key, label, val){
-    const [min,max,step] = lenRange(...lengthFieldSpecs[grp][key]);
-    return numField(grp, key, label, val, min, max, step, uLabel(), fmt(val));
-  }
-
-  // ---------- Field definitions per type ----------
-  function fieldsHTML(){
-    if(type==='sloper'){
-      const s = state.sloper;
-      return `
-        ${numField('sloper','az','Azimuth to far end (° from N)', s.az, 0,360,1,'')}
-        ${lenField('sloper','z1','Feed height', s.z1)}
-        ${lenField('sloper','z2','Support height (far end)', s.z2)}
-        ${lenField('sloper','dist','Horizontal distance to support', s.dist)}
-        <div class="wgc-hint">Wire length and elevation angle are derived. Use for a wire run straight to one tree/mast — no sag modeled (assume reasonably taut).</div>
-      `;
+  // The 1/2/5 x 10^k closest to x (in log terms).
+  function niceStepNear(x){
+    const p = Math.pow(10, Math.floor(Math.log10(x)));
+    let best = p, bd = Infinity;
+    for(const m of [1,2,5,10]){
+      const d = Math.abs(Math.log(m*p/x));
+      if(d < bd){ bd = d; best = m*p; }
     }
-    if(type==='invv'){
-      const s = state.invv;
-      return `
-        ${lenField('invv','zApex','Apex (mast) height', s.zApex)}
-        <div class="wgc-hint" style="margin-bottom:8px;">— Leg 1 (feed end) —</div>
-        ${numField('invv','azApex','Azimuth, apex→feed (° from N)', s.azApex, 0,360,1,'')}
-        ${lenField('invv','z1','Feed height', s.z1)}
-        ${lenField('invv','d1','Horizontal dist, apex→feed', s.d1)}
-        <div class="wgc-hint" style="margin-bottom:8px;">— Leg 2 (far end) —</div>
-        ${numField('invv','az2','Azimuth, apex→far end (° from N)', s.az2, 0,360,1,'')}
-        ${lenField('invv','z2','Far-end height', s.z2)}
-        ${lenField('invv','d2','Horizontal dist, apex→far end', s.d2)}
-        <div class="wgc-hint">Legs need not be collinear — set az2 ≠ azApex+180 for a bent V between two mismatched trees. Straight legs, no sag.</div>
-      `;
+    return best;
+  }
+  // Round-number tick positions covering [lo,hi], about `target` of them.
+  function niceTicks(lo, hi, target){
+    const step = niceCeil((hi-lo)/(target||5));
+    const out = [];
+    for(let v = Math.ceil(lo/step - 1e-9)*step; v <= hi + step*1e-9; v += step){
+      out.push(Math.abs(v) < step*1e-9 ? 0 : v);
     }
-    if(type==='sag'){
-      const s = state.sag;
-      return `
-        ${numField('sag','az','Azimuth to anchor (° from N)', s.az, 0,360,1,'')}
-        ${lenField('sag','z1','Feed height', s.z1)}
-        ${lenField('sag','z2','Anchor height', s.z2)}
-        ${lenField('sag','dist','Horizontal distance to anchor', s.dist)}
-        ${lenField('sag','wireLen','Actual wire length (slack included)', s.wireLen)}
-        <div id="wgcSagWarn"></div>
-        <div class="wgc-hint">Models real catenary droop from excess wire length beyond the taut straight-line distance. Outputs 11 waypoints along the curve for a multi-segment NEC wire.</div>
-      `;
+    return { step, ticks: out };
+  }
+  function tickLabel(v){ return String(Math.round(v*100)/100); }
+
+  // ---------- Slider specs ----------
+  // Native [min,max,step] per unit (no feet-in-disguise steps in meters). A
+  // slider's range grows to a round-number ceiling if the current value is
+  // near/over the default max, so a 100 m wire isn't pinned to a 50 m slider.
+  // Ranges are only recomputed when the parameter panel is rebuilt, never
+  // mid-drag, so a slider can't move under the user's finger.
+  const FIELD_SPECS = {
+    dist:   { ft:[0,150,1],     m:[0,50,0.5] },
+    height: { ft:[0,80,0.5],    m:[0,25,0.25] },
+    slack:  { ft:[0,20,0.25],   m:[0,6,0.1] },
+    len:    { ft:[1,100,1],     m:[1,30,0.5] },
+    az:     [0,360,1],
+    spread: [0,360,5],
+    n:      [1,12,1]
+  };
+  function sliderSpec(kind, value){
+    const base = FIELD_SPECS[kind];
+    const [min,max0,step0] = Array.isArray(base) ? base : base[unit];
+    if(value > max0*0.9){
+      const max = niceCeil(value*1.5);
+      return [min, max, niceStepNear(step0*max/max0)];
     }
-    if(type==='counterpoise'){
-      const s = state.counterpoise;
-      return `
-        ${numField('counterpoise','n','Number of radials', s.n, 1,12,1,'')}
-        ${lenField('counterpoise','len','Radial length', s.len)}
-        ${lenField('counterpoise','zAttach','Height at feed/attach point', s.zAttach)}
-        ${lenField('counterpoise','zEnd','Height at radial ends (0 = on ground)', s.zEnd)}
-        ${numField('counterpoise','centerAz','Fan center azimuth (° from N)', s.centerAz, 0,360,1,'')}
-        ${numField('counterpoise','spread','Fan spread (total angle)', s.spread, 0,360,5,'°')}
-        <div class="wgc-hint">Radials fan evenly across the spread, centered on the azimuth. Spread=360 with N radials gives an even star pattern. Straight radials, no sag.</div>
-      `;
-    }
+    return [min, max0, step0];
   }
 
-  // `displayVal` lets callers show a rounded label (e.g. lenField uses fmt())
-  // while the slider's own `value` still gets the precise, step-aligned
-  // number — cleaned of floating-point noise digits (via toFixed(6), still
-  // far finer than any slider step) without losing the precision that
-  // step-alignment depends on.
-  function numField(grp, key, label, val, min, max, step, suffix, displayVal){
-    const shown = displayVal===undefined ? val : displayVal;
-    return `
-      <div class="wgc-field">
-        <label>${label} <span class="wgc-val" id="lbl_${grp}_${key}">${shown}${suffix?' '+suffix:''}</span></label>
-        <input type="range" min="${min}" max="${max}" step="${step}" value="${(+val).toFixed(6)}" data-grp="${grp}" data-key="${key}" data-suffix="${suffix}">
-      </div>
-    `;
+  // ---------- Scene model ----------
+  // scene = { elements:[...], feedEl:<wire id>, seq, wireN, fanN }
+  //   wire: { id, kind:'wire', name, attach:null|{el,idx}, az,
+  //           supports:[{d,z}, ...],  // d = horizontal distance from the wire's
+  //                                   // start along az (supports[0].d is 0);
+  //                                   // z = height. >=2 supports.
+  //           slack:[...] }           // slack[i] = extra wire length in span i
+  //                                   // (between supports i and i+1); 0 = taut,
+  //                                   // >0 = catenary sag between those supports.
+  //   fan:  { id, kind:'fan', name, attach:{el,idx}, n, len, zEnd, centerAz, spread }
+  // attach: null = origin; {el,idx} = the idx-th support of an earlier wire.
+  // All lengths are in the current display unit.
+  function newScene(){ return { elements:[], feedEl:null, seq:0, wireN:0, fanN:0 }; }
+
+  // Converts a feet default to the current unit; meters are rounded to 5 cm
+  // so a metric preset reads 1.2 m, not 1.2192 m.
+  function U(ft){ return unit==='ft' ? ft : Math.round(ft*FT*20)/20; }
+
+  function addWire(sc, o){
+    const id = 'e' + (++sc.seq);
+    const el = { id, kind:'wire', name:'Wire ' + (++sc.wireN), attach:null, az:90,
+                 supports:[{d:0,z:U(4)},{d:U(30),z:U(20)}], slack:[0] };
+    Object.assign(el, o||{});
+    sc.elements.push(el);
+    if(!sc.feedEl) sc.feedEl = id;
+    return el;
+  }
+  function addFan(sc, o){
+    const id = 'e' + (++sc.seq);
+    const el = { id, kind:'fan', name:'Fan ' + (++sc.fanN), attach:null,
+                 n:4, len:U(25), zEnd:0, centerAz:270, spread:140 };
+    Object.assign(el, o||{});
+    sc.elements.push(el);
+    return el;
   }
 
-  function bindInputs(){
-    root.querySelectorAll('#wgcInputs input[type="range"]').forEach(inp=>{
-      inp.addEventListener('input', e=>{
-        const grp = e.target.dataset.grp, key = e.target.dataset.key, suffix = e.target.dataset.suffix;
-        state[grp][key] = parseFloat(e.target.value);
-        const lbl = document.getElementById(`lbl_${grp}_${key}`);
-        lbl.textContent = e.target.value + (suffix ? ' '+suffix : '');
-        renderOutputs();
-      });
+  const PRESETS = [
+    { key:'sloper', label:'Straight Sloper', build(sc){
+        addWire(sc, { az:90, supports:[{d:0,z:U(4)},{d:U(35),z:U(28)}], slack:[0] });
+    }},
+    { key:'sagsloper', label:'Sagging Sloper', build(sc){
+        addWire(sc, { az:90, supports:[{d:0,z:U(4)},{d:U(30),z:U(26)}], slack:[U(2.8)] });
+    }},
+    { key:'invv', label:'Inverted-V', build(sc){
+        addWire(sc, { az:270, supports:[{d:0,z:U(4)},{d:U(22),z:U(32)},{d:U(40),z:U(6)}], slack:[0,0] });
+    }},
+    { key:'saginvv', label:'Sagging Inverted-V', build(sc){
+        addWire(sc, { az:270, supports:[{d:0,z:U(4)},{d:U(22),z:U(32)},{d:U(40),z:U(6)}], slack:[U(1.5),U(1.5)] });
+    }},
+    { key:'invl', label:'Inverted-L', build(sc){
+        addWire(sc, { az:90, supports:[{d:0,z:U(2)},{d:0,z:U(30)},{d:U(50),z:U(30)}], slack:[0,0] });
+    }},
+    { key:'sloperfan', label:'Sloper + Counterpoise', build(sc){
+        const w = addWire(sc, { az:90, supports:[{d:0,z:U(4)},{d:U(35),z:U(28)}], slack:[0] });
+        addFan(sc, { attach:{el:w.id, idx:0}, n:4, len:U(25), zEnd:0, centerAz:270, spread:140 });
+    }}
+  ];
+
+  function buildPreset(key){
+    const sc = newScene();
+    PRESETS.find(p=>p.key===key).build(sc);
+    return sc;
+  }
+
+  // Scales every length in the scene exactly (no snapping — sliders only
+  // steer; the stored value is whatever was typed or dragged).
+  // Trims float noise (3.9999999999999996) left by a round trip of unit conversions.
+  function r9(v){ return Math.round(v*1e9)/1e9; }
+  function convertScene(sc, factor){
+    sc.elements.forEach(el=>{
+      if(el.kind==='wire'){
+        el.supports.forEach(s=>{ s.d = r9(s.d*factor); s.z = r9(s.z*factor); });
+        el.slack = el.slack.map(v=>r9(v*factor));
+      } else {
+        el.len = r9(el.len*factor); el.zEnd = r9(el.zEnd*factor);
+      }
     });
   }
 
-  // ---------- Geometry builders (pure functions of the passed-in state slice;
-  // all math is in whatever unit the caller's values are already expressed in) ----------
-  function buildSloper(s){
-    const wireLen = Math.sqrt(s.dist*s.dist + (s.z2-s.z1)*(s.z2-s.z1));
-    const elev = Math.atan2(s.z2-s.z1, s.dist)*180/Math.PI;
-    const p1 = {x:0,y:0,z:s.z1};
-    const far = az2xy(s.az, s.dist);
-    const p2 = {x:far.x, y:far.y, z:s.z2};
-    return {
-      points: [ {label:'Feed', ...p1}, {label:'Far end', ...p2} ],
-      wires: [ {label:'W1 (radiator)', from:p1, to:p2} ],
-      summary: [ ['Wire length', wireLen, 'length'], ['Elevation angle', elev, 'angle'] ]
-    };
+  // Repairs structural invariants after any add/remove/edit: >=2 supports,
+  // slack array length, support 0 at d=0, attach references that point at
+  // something earlier in the list, and a valid feed wire.
+  function sanitizeScene(sc){
+    const seen = {};
+    let firstWire = null;
+    sc.elements.forEach(el=>{
+      if(el.kind==='wire'){
+        while(el.supports.length < 2){
+          const last = el.supports[el.supports.length-1] || {d:0,z:0};
+          el.supports.push({ d:last.d + U(10), z:last.z });
+        }
+        el.supports[0].d = 0;
+        const spans = el.supports.length-1;
+        el.slack = el.slack.slice(0, spans);
+        while(el.slack.length < spans) el.slack.push(0);
+        if(!firstWire) firstWire = el;
+      }
+      if(el.attach){
+        const t = seen[el.attach.el];
+        if(!t || t.kind!=='wire') el.attach = null;
+        else el.attach.idx = Math.min(Math.max(0, el.attach.idx|0), t.n-1);
+      }
+      if(el.kind==='fan' && !el.attach && firstWire && firstWire !== el){
+        el.attach = { el:firstWire.id, idx:0 };
+      }
+      seen[el.id] = { kind:el.kind, n:el.supports ? el.supports.length : 0 };
+    });
+    const feed = sc.elements.find(e=>e.id===sc.feedEl && e.kind==='wire');
+    if(!feed) sc.feedEl = firstWire ? firstWire.id : null;
   }
 
-  function buildInvV(s){
-    const apex = {x:0,y:0,z:s.zApex};
-    const feedOff = az2xy(s.azApex, s.d1);
-    const feed = {x:feedOff.x, y:feedOff.y, z:s.z1};
-    const farOff = az2xy(s.az2, s.d2);
-    const far = {x:farOff.x, y:farOff.y, z:s.z2};
-    const len1 = Math.sqrt(s.d1*s.d1 + (s.zApex-s.z1)*(s.zApex-s.z1));
-    const len2 = Math.sqrt(s.d2*s.d2 + (s.zApex-s.z2)*(s.zApex-s.z2));
-    return {
-      points: [ {label:'Feed', ...feed}, {label:'Apex (mast)', ...apex}, {label:'Far end', ...far} ],
-      wires: [ {label:'W1 (feed→apex)', from:feed, to:apex}, {label:'W2 (apex→far end)', from:apex, to:far} ],
-      summary: [ ['Leg 1 length', len1, 'length'], ['Leg 2 length', len2, 'length'], ['Total wire', len1+len2, 'length'] ]
-    };
-  }
-
+  // ---------- Geometry ----------
   function solveCatenaryA(l,h,s){
     const target = s*s-h*h;
     function f(a){ const x=l/(2*a); return 4*a*a*Math.sinh(x)*Math.sinh(x) - target; }
@@ -540,108 +676,342 @@
     return (lo+hi)/2;
   }
 
-  function buildSag(s){
-    const l = s.dist, h = s.z2-s.z1, wire = s.wireLen;
-    const straight = Math.sqrt(l*l+h*h);
-    if(wire<=straight){
-      return { points:[], wires:[], summary:[['Status','wire too short — increase length','raw']], invalid:true, straight };
-    }
-    const a = solveCatenaryA(l,h,wire);
+  // Catenary between two supports: horizontal span l, height difference h,
+  // wire length s. Returns N+1 points {x (horizontal from start), z (relative
+  // to start)} stepped evenly in horizontal x, plus the max sag below the
+  // chord; or null if the numbers blow up (absurd slack).
+  function catenaryPoints(l,h,s,N){
+    const a = solveCatenaryA(l,h,s);
     const xv = (l/2) - a*Math.asinh(h/(2*a*Math.sinh(l/(2*a))));
-    const C = s.z1 - a*Math.cosh(xv/a);
-    function zAt(x){ return a*Math.cosh((x-xv)/a) + C; }
-    const N = 10;
+    const C = -a*Math.cosh(xv/a);
+    const zAt = x => a*Math.cosh((x-xv)/a) + C;
     const pts = [];
-    for(let i=0;i<=N;i++){
-      const x = i/N*l;
-      const z = zAt(x);
-      const off = az2xy(s.az, x);
-      pts.push({x:off.x, y:off.y, z:z, label: i===0?'Feed':(i===N?'Anchor':`P${i}`)});
-    }
-    const wires = [];
-    for(let i=0;i<pts.length-1;i++){
-      wires.push({label:`W${i+1}`, from:pts[i], to:pts[i+1]});
-    }
-    // sag relative to straight chord: find lowest point of catenary vs chord line
+    for(let i=0;i<=N;i++){ const x = i/N*l; pts.push({ x, z:zAt(x) }); }
+    if(pts.some(p=>!isFinite(p.z))) return null;
+    pts[0].z = 0; pts[N].z = h;
     let maxSag = 0;
     for(let i=0;i<=100;i++){
-      const x=i/100*l;
-      const zc = zAt(x);
-      const zChord = s.z1 + (h)*(x/l);
-      const sagHere = zChord - zc;
-      if(sagHere>maxSag) maxSag = sagHere;
+      const x = i/100*l;
+      const sag = h*(x/l) - zAt(x);
+      if(sag > maxSag) maxSag = sag;
     }
-    return {
-      points: pts, wires, straight,
-      summary: [ ['Straight-line dist', straight, 'length'], ['Slack', wire-straight, 'length'], ['Max sag below chord', maxSag, 'length'] ]
-    };
+    return { pts, maxSag };
   }
 
-  function buildCounterpoise(s){
-    const n = Math.round(s.n);
-    const pts = [];
-    const wires = [];
-    const feed = {x:0,y:0,z:s.zAttach};
-    // At a full 360° spread the first and last radial are 360° apart, i.e. the
-    // same bearing — dividing by (n-1) would double up that bearing instead of
-    // giving n evenly-spaced radials, so use n as the divisor in that case.
-    const step = n===1 ? 0 : (s.spread===360 ? s.spread/n : s.spread/(n-1));
-    for(let i=0;i<n;i++){
-      let az;
-      if(n===1){ az = s.centerAz; }
-      else { az = s.centerAz - s.spread/2 + i*step; }
-      const off = az2xy(az, s.len);
-      const end = {x:off.x, y:off.y, z:s.zEnd};
-      pts.push({label:`R${i+1} end`, ...end});
-      wires.push({label:`R${i+1}`, from:feed, to:end});
-    }
-    return {
-      points: [{label:'Feed/attach', ...feed}, ...pts],
-      wires,
-      summary: [ ['Radials', n, 'count'], ['Length each', s.len, 'length'], ['Total wire', n*s.len, 'length'] ]
-    };
-  }
+  // Core solver. Roots (wires with no attach) start at (ox,oy); everything else
+  // follows from its attach point. Pure function of the scene.
+  function solveRaw(sc, ox, oy){
+    const out = { elements:[], points:[], wires:[], warnings:[], summary:[], firstSub:{} };
+    const anchors = {}; // wire id -> its support points, in 3D
+    let total = 0;
 
-  function build(){
-    if(type==='sloper') return buildSloper(state.sloper);
-    if(type==='invv') return buildInvV(state.invv);
-    if(type==='sag') return buildSag(state.sag);
-    if(type==='counterpoise') return buildCounterpoise(state.counterpoise);
-  }
+    sc.elements.forEach(el=>{
+      const info = { id:el.id, name:el.name, kind:el.kind, startZ:null, length:0 };
+      out.elements.push(info);
+      const list = el.attach ? anchors[el.attach.el] : null;
+      const att = list ? list[Math.min(Math.max(0, el.attach.idx|0), list.length-1)] : null;
 
-  // ---------- Rendering ----------
-  function renderTable(model){
-    const tbl = document.getElementById('wgcTable');
-    if(model.invalid){ tbl.innerHTML = '<tr><td>—</td></tr>'; return; }
-    let rows = '<tr><th>Point</th><th>X (E)</th><th>Y (N)</th><th>Z (Up)</th></tr>';
-    model.points.forEach(p=>{
-      rows += `<tr><td>${p.label}</td><td>${fmt(p.x)}</td><td>${fmt(p.y)}</td><td>${fmt(p.z)}</td></tr>`;
+      if(el.kind==='wire'){
+        const sup = el.supports;
+        const start = att ? { x:att.x, y:att.y, z:att.z } : { x:ox, y:oy, z:sup[0].z };
+        info.startZ = start.z;
+        const d0 = sup[0].d;
+        let prevD = 0;
+        const sp = sup.map((s,i)=>{
+          const d = Math.max(prevD, s.d - d0); prevD = d;
+          const o = az2xy(el.az, d);
+          return { x:start.x+o.x, y:start.y+o.y, z: i===0 ? start.z : s.z };
+        });
+        anchors[el.id] = sp;
+        const nSpans = sp.length-1;
+        out.firstSub[el.id] = out.wires.length;
+        let wireLen = 0, slackSum = 0, minZ = Infinity;
+        const sags = [];
+        for(let i=0;i<=nSpans;i++){
+          out.points.push({ ...sp[i], label:`${el.name} · S${i+1}`, kind:'support', el:el.id });
+          minZ = Math.min(minZ, sp[i].z);
+          if(i===nSpans) break;
+          const a = sp[i], b = sp[i+1];
+          const l = Math.hypot(b.x-a.x, b.y-a.y), h = b.z-a.z, chord = Math.hypot(l,h);
+          const slack = Math.max(0, +el.slack[i] || 0);
+          const base = nSpans===1 ? el.name : `${el.name} span ${i+1}`;
+          let curve = null;
+          if(slack > 1e-9 && l > 1e-9){
+            curve = catenaryPoints(l, h, chord+slack, 10);
+            if(!curve) out.warnings.push({ kind:'sag-failed', el:el.name, span:i+1 });
+          }
+          if(curve){
+            const N = curve.pts.length-1;
+            const ux = (b.x-a.x)/l, uy = (b.y-a.y)/l;
+            const sub = curve.pts.map((c,k)=>({ x:a.x+ux*c.x, y:a.y+uy*c.x, z:a.z+c.z }));
+            sub[0] = { ...a }; sub[N] = { ...b };
+            for(let k=1;k<N;k++){
+              out.points.push({ ...sub[k], label:`${el.name} · span ${i+1} pt ${k}`, kind:'mid', el:el.id });
+              minZ = Math.min(minZ, sub[k].z);
+            }
+            for(let k=0;k<N;k++){
+              out.wires.push({ label:`${base}.${k+1}`, from:sub[k], to:sub[k+1], el:el.id });
+            }
+            wireLen += chord+slack; slackSum += slack;
+            sags.push([i, curve.maxSag]);
+          } else {
+            out.wires.push({ label:base, from:{...a}, to:{...b}, el:el.id });
+            wireLen += chord;
+          }
+        }
+        info.length = wireLen;
+        total += wireLen;
+        if(minZ < -1e-6) out.warnings.push({ kind:'below-ground', el:el.name, z:minZ });
+        out.summary.push([`${el.name} length`, wireLen, 'length']);
+        if(slackSum > 0) out.summary.push([`${el.name} slack`, slackSum, 'length']);
+        sags.forEach(([i,m])=>out.summary.push([nSpans===1 ? `${el.name} max sag` : `${el.name} span ${i+1} max sag`, m, 'length']));
+      } else {
+        const P = att ? { x:att.x, y:att.y, z:att.z } : { x:ox, y:oy, z:0 };
+        info.startZ = P.z;
+        const n = Math.max(1, Math.round(el.n));
+        // At a full 360° spread the first and last radial are 360° apart, i.e. the
+        // same bearing — dividing by (n-1) would double up that bearing instead of
+        // giving n evenly-spaced radials, so use n as the divisor in that case.
+        const step = n===1 ? 0 : (el.spread===360 ? el.spread/n : el.spread/(n-1));
+        // `len` is the cut length of each radial; its horizontal reach follows
+        // from the height drop between the attach point and the radial end.
+        const dz = el.zEnd - P.z;
+        const reach2 = el.len*el.len - dz*dz;
+        const reach = reach2 > 0 ? Math.sqrt(reach2) : 0;
+        if(reach2 < 0) out.warnings.push({ kind:'fan-short', el:el.name });
+        out.firstSub[el.id] = out.wires.length;
+        for(let i=0;i<n;i++){
+          const az = n===1 ? el.centerAz : el.centerAz - el.spread/2 + i*step;
+          const o = az2xy(az, reach);
+          const end = { x:P.x+o.x, y:P.y+o.y, z:el.zEnd };
+          out.points.push({ ...end, label:`${el.name} · R${i+1} end`, kind:'end', el:el.id });
+          out.wires.push({ label:`${el.name} R${i+1}`, from:{...P}, to:end, el:el.id });
+        }
+        const each = Math.hypot(reach, dz);
+        info.length = n*each;
+        total += info.length;
+        out.summary.push([`${el.name} radials`, n, 'count']);
+        out.summary.push([`${el.name} total wire`, info.length, 'length']);
+      }
     });
-    tbl.innerHTML = rows;
+
+    if(sc.elements.length > 1) out.summary.push(['Total wire', total, 'length']);
+    const fa = anchors[sc.feedEl];
+    out.feed = fa ? { ...fa[0] } : { x:0, y:0, z:0 };
+    return out;
   }
 
-  function formatSummaryValue(value, kind){
-    if(kind==='length') return fmt(value)+' '+uLabel();
-    if(kind==='angle') return fmt(value)+'°';
-    if(kind==='count') return String(value);
-    return value; // 'raw' — already a display-ready string
+  // Convention: the feed (source wire's start) is the origin in X/Y, with its
+  // own height as Z. Solve once, then re-solve shifted if the feed isn't there
+  // already (e.g. the source wire is attached partway along another wire).
+  function solveScene(sc){
+    let r = solveRaw(sc, 0, 0);
+    if(Math.abs(r.feed.x) > 1e-12 || Math.abs(r.feed.y) > 1e-12){
+      r = solveRaw(sc, -r.feed.x, -r.feed.y);
+    }
+    return r;
   }
 
-  function renderSummary(model){
-    const el = document.getElementById('wgcSummary');
-    el.innerHTML = model.summary.map(([k,v,kind])=>`<div class="wgc-summary-item"><span class="k">${k}</span><span class="v">${formatSummaryValue(v,kind)}</span></div>`).join('');
+  // ---------- Field access for the UI ----------
+  function getVal(el, field, idx){
+    if(field==='sup.d') return el.supports[idx].d;
+    if(field==='sup.z') return el.supports[idx].z;
+    if(field==='slack') return el.slack[idx];
+    return el[field];
+  }
+  function setVal(el, field, idx, v){
+    if(field==='sup.d') el.supports[idx].d = v;
+    else if(field==='sup.z') el.supports[idx].z = v;
+    else if(field==='slack') el.slack[idx] = v;
+    else el[field] = v;
+  }
+  function clampVal(field, v){
+    if(field==='spread') return Math.min(360, Math.max(0, v));
+    if(field==='n') return Math.min(36, Math.max(1, Math.round(v)));
+    if(field==='len') return Math.max(0.01, v);
+    if(field==='az' || field==='centerAz') return v;
+    return Math.max(0, v); // sup.d, sup.z, slack, zEnd
+  }
+  function wrapAz(v){ return ((v % 360) + 360) % 360; }
+  function kindOf(field){
+    if(field==='sup.d') return 'dist';
+    if(field==='sup.z' || field==='zEnd') return 'height';
+    return field; // slack, len, az, spread, n
+  }
+  // Keeps support distances non-decreasing along the wire.
+  function enforceMonotone(el){
+    for(let j=1;j<el.supports.length;j++){
+      if(el.supports[j].d < el.supports[j-1].d) el.supports[j].d = el.supports[j-1].d;
+    }
   }
 
-  function renderSagWarning(model){
-    const slot = document.getElementById('wgcSagWarn');
-    if(!slot) return; // not on the Sagging Sloper tab
-    slot.innerHTML = model.invalid
-      ? `<div class="wgc-warn">Wire length must exceed the straight-line distance (${fmt(model.straight)} ${uLabel()}) or there's no slack to sag. Increase wire length.</div>`
-      : '';
+  // ---------- Parameter panel ----------
+  function fieldHTML(o){
+    const attrs = `data-el="${o.el}" data-field="${o.field}"` + (o.idx!==undefined ? ` data-idx="${o.idx}"` : '');
+    const unitTxt = o.suffix===undefined ? uLabel() : o.suffix;
+    if(o.readonly){
+      return `<div class="wgc-field"><label>${o.label}</label><div class="wgc-ctl">
+        <input type="number" ${attrs} data-role="num" value="${fmtIn(o.value)}" disabled>
+        <span class="wgc-unit">${unitTxt}</span></div></div>`;
+    }
+    const [min,max,step] = sliderSpec(o.kind, o.value);
+    return `<div class="wgc-field"><label>${o.label}</label><div class="wgc-ctl">
+      <input type="number" ${attrs} data-role="num" step="${step}" value="${fmtIn(o.value)}">
+      <input type="range" ${attrs} data-role="rng" min="${min}" max="${max}" step="${step}" value="${(+o.value).toFixed(6)}">
+      <span class="wgc-unit">${unitTxt}</span></div></div>`;
   }
 
+  function attachOptionsHTML(el, listIdx){
+    const opts = [];
+    if(el.kind==='wire') opts.push(['origin', 'Origin (feed point)']);
+    scene.elements.slice(0, listIdx).forEach(o=>{
+      if(o.kind!=='wire') return;
+      o.supports.forEach((s,k)=>{
+        const tag = k===0 ? ' (start)' : (k===o.supports.length-1 ? ' (end)' : '');
+        opts.push([`${o.id}:${k}`, `${o.name} · S${k+1}${tag}`]);
+      });
+    });
+    if(!opts.length) opts.push(['origin', 'Origin']);
+    const cur = el.attach ? `${el.attach.el}:${el.attach.idx}` : 'origin';
+    return opts.map(([v,t])=>`<option value="${v}"${v===cur?' selected':''}>${t}</option>`).join('');
+  }
+
+  function wireCardHTML(el, listIdx, wireCount){
+    const attached = !!el.attach;
+    let h = `<div class="wgc-card" data-card="${el.id}">
+      <div class="wgc-card-head"><span class="wgc-card-title">${el.name}</span>
+        ${wireCount>1 ? `<button class="wgc-btn small danger" data-action="remove-el" data-el="${el.id}" title="Remove this wire">Remove</button>` : ''}
+      </div>
+      <div class="wgc-field"><label>Starts at</label>
+        <select class="wgc-select" data-el="${el.id}" data-field="attach">${attachOptionsHTML(el, listIdx)}</select></div>
+      ${fieldHTML({ el:el.id, field:'az', label:'Azimuth (° from N)', value:el.az, kind:'az', suffix:'°' })}`;
+    const nSup = el.supports.length;
+    el.supports.forEach((s,i)=>{
+      const tag = i===0 ? ' · start' : (i===nSup-1 ? ' · end' : '');
+      h += `<div class="wgc-sub-label"><span>Support ${i+1}${tag}</span><span class="btns">
+        <button class="wgc-btn small" data-action="insert-support" data-el="${el.id}" data-idx="${i}" title="Insert a support after this one">+ after</button>
+        ${i>0 && nSup>2 ? `<button class="wgc-btn small danger" data-action="remove-support" data-el="${el.id}" data-idx="${i}" title="Remove this support">✕</button>` : ''}
+        </span></div>`;
+      if(i>0){
+        h += fieldHTML({ el:el.id, field:'sup.d', idx:i, label:'Distance from start', value:s.d, kind:'dist' });
+      }
+      h += fieldHTML({ el:el.id, field:'sup.z', idx:i, label: i===0 && attached ? 'Height (from attach point)' : 'Height', value:s.z, kind:'height', readonly: i===0 && attached });
+      if(i<nSup-1){
+        h += fieldHTML({ el:el.id, field:'slack', idx:i, label:`Slack, span ${i+1}→${i+2} (0 = taut)`, value:el.slack[i], kind:'slack' });
+      }
+    });
+    return h + `</div>`;
+  }
+
+  function fanCardHTML(el, listIdx){
+    return `<div class="wgc-card fan" data-card="${el.id}">
+      <div class="wgc-card-head"><span class="wgc-card-title">${el.name} · counterpoise</span>
+        <button class="wgc-btn small danger" data-action="remove-el" data-el="${el.id}" title="Remove this fan">Remove</button>
+      </div>
+      <div class="wgc-field"><label>Attach to</label>
+        <select class="wgc-select" data-el="${el.id}" data-field="attach">${attachOptionsHTML(el, listIdx)}</select></div>
+      ${fieldHTML({ el:el.id, field:'n', label:'Number of radials', value:el.n, kind:'n', suffix:'' })}
+      ${fieldHTML({ el:el.id, field:'len', label:'Radial length (cut length)', value:el.len, kind:'len' })}
+      ${fieldHTML({ el:el.id, field:'zEnd', label:'Height at radial ends (0 = on ground)', value:el.zEnd, kind:'height' })}
+      ${fieldHTML({ el:el.id, field:'centerAz', label:'Fan center azimuth (° from N)', value:el.centerAz, kind:'az', suffix:'°' })}
+      ${fieldHTML({ el:el.id, field:'spread', label:'Fan spread (total angle)', value:el.spread, kind:'spread', suffix:'°' })}
+      <div class="wgc-hint" style="margin-bottom:8px;">Radials fan evenly across the spread. Spread=360 gives an even star. Straight radials, no sag.</div>
+    </div>`;
+  }
+
+  function renderSourceSelect(){
+    const sel = document.getElementById('wgcSourceSelect');
+    sel.innerHTML = scene.elements.filter(e=>e.kind==='wire')
+      .map(e=>`<option value="${e.id}"${e.id===scene.feedEl?' selected':''}>Start of ${e.name}</option>`).join('');
+  }
+
+  function renderInputs(){
+    const wireCount = scene.elements.filter(e=>e.kind==='wire').length;
+    let h = `<div class="wgc-panel-label">Wires &amp; Counterpoise</div>
+      <div class="wgc-hint" style="margin-bottom:10px;">A wire runs along one azimuth through its supports (distance + height). Slack between two supports hangs as a catenary; zero slack is taut. Feed is the start of the source wire.</div>`;
+    scene.elements.forEach((el,i)=>{
+      h += el.kind==='wire' ? wireCardHTML(el, i, wireCount) : fanCardHTML(el, i);
+    });
+    h += `<div class="wgc-add-row">
+      <button class="wgc-btn add" data-action="add-wire">+ Add wire</button>
+      <button class="wgc-btn add" data-action="add-fan">+ Add counterpoise fan</button>
+    </div>`;
+    document.getElementById('wgcInputs').innerHTML = h;
+    renderSourceSelect();
+  }
+
+  // Pushes state into every control except the one being edited, so cascaded
+  // changes (support ordering, mirrored attach heights) show up immediately.
+  function syncControls(except){
+    document.querySelectorAll('#wgcInputs [data-role]').forEach(inp=>{
+      if(inp === except) return;
+      const el = scene.elements.find(e=>e.id===inp.dataset.el);
+      if(!el) return;
+      const v = getVal(el, inp.dataset.field, inp.dataset.idx===undefined ? undefined : +inp.dataset.idx);
+      if(v===undefined) return;
+      if(inp.dataset.role==='num'){
+        const s = fmtIn(v);
+        if(inp.value !== s) inp.value = s;
+      } else {
+        inp.value = (+v).toFixed(6);
+      }
+    });
+  }
+
+  // ---------- Structural edits ----------
+  function parseAttach(v){
+    if(v==='origin') return null;
+    const [id, idx] = v.split(':');
+    return { el:id, idx:parseInt(idx,10) };
+  }
+
+  function removeElement(id){
+    scene.elements = scene.elements.filter(e=>e.id!==id);
+    sanitizeScene(scene);
+  }
+
+  function insertSupport(el, idx){
+    const n = el.supports.length;
+    if(idx >= n-1){
+      const last = el.supports[n-1];
+      el.supports.push({ d:last.d + U(10), z:last.z });
+      el.slack.push(0);
+    } else {
+      const a = el.supports[idx], b = el.supports[idx+1];
+      el.supports.splice(idx+1, 0, { d:(a.d+b.d)/2, z:(a.z+b.z)/2 });
+      const s = el.slack[idx] || 0;
+      el.slack.splice(idx, 1, s/2, s/2);
+    }
+    scene.elements.forEach(o=>{
+      if(o.attach && o.attach.el===el.id && o.attach.idx > idx) o.attach.idx++;
+    });
+  }
+
+  function removeSupport(el, idx){
+    if(idx<=0 || el.supports.length<=2) return;
+    el.supports.splice(idx, 1);
+    if(idx >= el.slack.length) el.slack.pop();
+    else {
+      const merged = (el.slack[idx-1]||0) + (el.slack[idx]||0);
+      el.slack.splice(idx-1, 2, merged);
+    }
+    scene.elements.forEach(o=>{
+      if(o.attach && o.attach.el===el.id){
+        if(o.attach.idx > idx) o.attach.idx--;
+        else if(o.attach.idx === idx) o.attach.idx = idx-1;
+      }
+    });
+  }
+
+  function loadPreset(key){
+    scene = buildPreset(key);
+    sanitizeScene(scene);
+    render();
+  }
+
+  // ---------- Exports ----------
   function buildGenericExport(model){
-    const lines = [`# Wire antenna geometry export — ${type} — units: ${uLabel()}`, `# label\tX1\tY1\tZ1\tX2\tY2\tZ2`];
+    const lines = [`# Wire antenna geometry export — units: ${uLabel()}`, `# label\tX1\tY1\tZ1\tX2\tY2\tZ2`];
     model.wires.forEach(w=>{
       lines.push(`${w.label}\t${fmt(w.from.x)}\t${fmt(w.from.y)}\t${fmt(w.from.z)}\t${fmt(w.to.x)}\t${fmt(w.to.y)}\t${fmt(w.to.z)}`);
     });
@@ -705,15 +1075,13 @@
   // MMANA's .maa format always stores X/Y/Z in meters regardless of the
   // active display unit (there's no per-file unit field) — convert explicitly
   // rather than assuming the app's current `unit`.
-  function toMeters(v){ return unit==='ft' ? v*0.3048 : v; }
+  function toMeters(v){ return unit==='ft' ? v*FT : v; }
 
   // #10 AWG radius in meters — same assumed wire gauge as the EZNEC export's
   // hardcoded "#10" Dia column, kept as one named constant so both exporters
   // can't silently drift onto two different assumed gauges.
   const WIRE_RADIUS_IN = 0.0509; // #10 AWG radius, inches
   const WIRE_RADIUS_M = WIRE_RADIUS_IN * 0.0254;
-
-  const TYPE_LABELS = { sloper:'Straight Sloper', invv:'Inverted-V End-Fed', sag:'Sagging Sloper', counterpoise:'Counterpoise Fan' };
 
   // Matches the MMANA-GAL .maa numeric style seen in real files: no forced
   // decimal places beyond one (e.g. "13.0" not "13"), 6 significant figures,
@@ -731,7 +1099,7 @@
   function buildMmanaExport(model){
     const wires = model.wires;
     const lines = [];
-    lines.push(`${TYPE_LABELS[type]} — generated by Wire Antenna Geometry Calculator`);
+    lines.push('Wire antenna model — generated by Wire Antenna Geometry Calculator');
     lines.push('*');
     lines.push(mmanaNum(mmanaFreq));
     lines.push('***Wires***');
@@ -748,16 +1116,14 @@
       ].map(mmanaNum).join(',\t');
       lines.push(coords + ',\t-1');
     });
-    // A source is placed at wire 1's beginning (the feed/attach point in every
-    // builder here) for all geometry types, including Counterpoise — though a
-    // counterpoise fan on its own isn't really a standalone radiator in
-    // practice (it's meant to attach to another antenna's feedpoint), giving
-    // it a nominal source keeps the file a valid, loadable NEC model on its
-    // own; delete it in MMANA if merging these wires into a larger model.
+    // The source goes at the beginning of the chosen source wire's first
+    // sub-wire (the feed point). Delete it in MMANA if merging these wires
+    // into a larger model that already has its own source.
+    const k = (model.firstSub[scene.feedEl] || 0) + 1;
     lines.push('*** Source ***');
     lines.push('1,\t1');
-    lines.push('w1b,\t0.0,\t1.0');
-    // No loads modeled by any geometry type here.
+    lines.push(`w${k}b,\t0.0,\t1.0`);
+    // No loads modeled.
     lines.push('*** Load ***');
     lines.push('0,\t1');
     // Fixed defaults matching MMANA-GAL's own recommended tapering setup and
@@ -774,150 +1140,347 @@
     return lines.join('\n');
   }
 
+  // ---------- Rendering: table, summary, warnings, export ----------
+  function renderTable(model){
+    const tbl = document.getElementById('wgcTable');
+    let rows = '<tr><th>Point</th><th>X (E)</th><th>Y (N)</th><th>Z (Up)</th></tr>';
+    model.points.forEach(p=>{
+      rows += `<tr><td>${p.label}</td><td>${fmt(p.x)}</td><td>${fmt(p.y)}</td><td>${fmt(p.z)}</td></tr>`;
+    });
+    tbl.innerHTML = rows;
+  }
+
+  function formatSummaryValue(value, kind){
+    if(kind==='length') return fmt(value)+' '+uLabel();
+    if(kind==='angle') return fmt(value)+'°';
+    if(kind==='count') return String(value);
+    return value; // 'raw' — already a display-ready string
+  }
+
+  function renderSummary(model){
+    const el = document.getElementById('wgcSummary');
+    el.innerHTML = model.summary.map(([k,v,kind])=>`<div class="wgc-summary-item"><span class="k">${k}</span><span class="v">${formatSummaryValue(v,kind)}</span></div>`).join('');
+  }
+
+  function warningText(w){
+    if(w.kind==='below-ground') return `${w.el} dips ${fmt(-w.z)} ${uLabel()} below ground at its lowest point. Raise a support or shorten the slack.`;
+    if(w.kind==='fan-short') return `${w.el}: radial length is shorter than the height drop to its end, so the radials are drawn straight down. Increase the radial length.`;
+    if(w.kind==='sag-failed') return `${w.el}, span ${w.span}: the slack is too large to solve a sag curve. Reduce the slack.`;
+    return '';
+  }
+
+  function renderWarnings(model){
+    document.getElementById('wgcWarnings').innerHTML = model.warnings.map(w=>`<div class="wgc-warn">${warningText(w)}</div>`).join('');
+  }
+
   function renderExport(model){
     const ta = document.getElementById('wgcExport');
-    if(model.invalid){ ta.value = ''; return; }
     if(exportFormat==='eznec') ta.value = buildEznecExport(model);
     else if(exportFormat==='mmana') ta.value = buildMmanaExport(model);
     else ta.value = buildGenericExport(model);
   }
 
-  function renderSVGs(model){
-    const side = document.getElementById('svgSide');
-    const top = document.getElementById('svgTop');
-    if(model.invalid || model.points.length===0){ side.innerHTML=''; top.innerHTML=''; return; }
+  // ---------- Rendering: 2D views ----------
+  const W2 = 320, H2 = 220;
 
-    const allX = model.points.map(p=>p.x), allY = model.points.map(p=>p.y), allZ = model.points.map(p=>p.z);
-    const minX=Math.min(0,...allX), maxX=Math.max(0,...allX);
-    const minY=Math.min(0,...allY), maxY=Math.max(0,...allY);
-    const minZ=0, maxZ=Math.max(1,...allZ);
-
-    // ---- Side view: horizontal radial distance from origin (signed along azimuth axis) vs Z ----
-    // project onto the dominant axis for simplicity: use distance from origin in XY, signed by dot with first non-feed point direction
-    function horizDist(p){
-      return Math.sqrt(p.x*p.x+p.y*p.y) * (Math.sign(p.x*allX[allX.length-1]+p.y*allY[allY.length-1]) || 1);
-    }
-    const hVals = model.points.map(horizDist);
-    const minH = Math.min(0,...hVals), maxH = Math.max(0,...hVals);
-    const padH = Math.max(1,(maxH-minH))*0.15;
-    const padZ = Math.max(1,(maxZ-minZ))*0.2;
-
-    const W=320,H=220, marginL=30, marginB=22, marginT=12, marginR=14;
-    const plotW = W-marginL-marginR, plotH = H-marginT-marginB;
-    function sx(h){ return marginL + (h-(minH-padH))/((maxH+padH)-(minH-padH))*plotW; }
-    function sz(z){ return marginT + plotH - (z-(0))/((maxZ+padZ)-0)*plotH; }
-
-    let sideSvg = `<line x1="${marginL}" y1="${sz(0)}" x2="${W-marginR}" y2="${sz(0)}" stroke="#3a4238" stroke-width="1"/>`;
-    sideSvg += `<line x1="${marginL}" y1="${marginT}" x2="${marginL}" y2="${H-marginB}" stroke="#3a4238" stroke-width="1"/>`;
-    // ground hatch
-    sideSvg += `<line x1="${marginL}" y1="${sz(0)}" x2="${W-marginR}" y2="${sz(0)}" stroke="#7fb069" stroke-width="1.5" stroke-dasharray="2,2"/>`;
-
-    if(model.wires){
-      model.wires.forEach(w=>{
-        const x1=sx(horizDist(w.from)), y1=sz(w.from.z), x2=sx(horizDist(w.to)), y2=sz(w.to.z);
-        sideSvg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#ffa726" stroke-width="2"/>`;
-      });
-    }
-    model.points.forEach(p=>{
-      const cx=sx(horizDist(p)), cy=sz(p.z);
-      sideSvg += `<circle cx="${cx}" cy="${cy}" r="3" fill="#edeae0"/>`;
-    });
-    // z axis labels
-    sideSvg += `<text x="4" y="${sz(0)+3}" font-size="8" fill="#8a8168" font-family="IBM Plex Mono">0</text>`;
-    sideSvg += `<text x="4" y="${sz(maxZ)+3}" font-size="8" fill="#8a8168" font-family="IBM Plex Mono">${fmt(maxZ)}</text>`;
-    side.innerHTML = sideSvg;
-
-    // ---- Top view: plan with compass rose ----
-    const cx0 = W/2, cy0 = H/2;
-    const maxR = Math.max(1, Math.max(Math.abs(minX),Math.abs(maxX),Math.abs(minY),Math.abs(maxY)));
-    const scale = (Math.min(plotW,plotH)/2 - 10) / (maxR*1.15);
-    function tx(x){ return cx0 + x*scale; }
-    function ty(y){ return cy0 - y*scale; } // north = up = -y in screen coords
-
-    let topSvg = '';
-    // compass rings
-    [0.33,0.66,1.0].forEach(f=>{
-      topSvg += `<circle cx="${cx0}" cy="${cy0}" r="${(Math.min(plotW,plotH)/2-10)*f}" fill="none" stroke="#2a3128" stroke-width="1"/>`;
-    });
-    topSvg += `<line x1="${cx0}" y1="8" x2="${cx0}" y2="${H-8}" stroke="#2a3128" stroke-width="1"/>`;
-    topSvg += `<line x1="8" y1="${cy0}" x2="${W-8}" y2="${cy0}" stroke="#2a3128" stroke-width="1"/>`;
-    topSvg += `<text x="${cx0-4}" y="14" font-size="9" fill="#8a8168" font-family="IBM Plex Mono">N</text>`;
-    topSvg += `<text x="${W-16}" y="${cy0+3}" font-size="9" fill="#8a8168" font-family="IBM Plex Mono">E</text>`;
-
-    if(model.wires){
-      model.wires.forEach(w=>{
-        topSvg += `<line x1="${tx(w.from.x)}" y1="${ty(w.from.y)}" x2="${tx(w.to.x)}" y2="${ty(w.to.y)}" stroke="#ffa726" stroke-width="2"/>`;
-      });
-    }
-    model.points.forEach(p=>{
-      topSvg += `<circle cx="${tx(p.x)}" cy="${ty(p.y)}" r="3" fill="#edeae0"/>`;
-    });
-    top.innerHTML = topSvg;
+  function mainAz(){
+    const w = scene.elements.find(e=>e.kind==='wire');
+    return w ? w.az : 0;
   }
 
-  // renderOutputs() alone is safe to call on every slider-drag tick (table,
-  // summary, export, SVGs, sag warning) — it never touches #wgcInputs, so it
-  // can't interrupt an in-progress drag by replacing the slider's own DOM node.
-  // renderInputs() rebuilds the parameter panel itself and is only needed on
-  // tab switch / unit toggle / initial load.
+  function renderSide(model){
+    const side = document.getElementById('svgSide');
+    const title = document.getElementById('wgcSideTitle');
+    if(!model.points.length){ side.innerHTML=''; return; }
+    // Project onto the vertical plane along the first wire's azimuth. Wires
+    // running in other directions are foreshortened — the 3D view shows them true.
+    const az0 = mainAz();
+    title.textContent = `Side Profile (looking along ${Math.round(az0)}° axis)`;
+    const sa = Math.sin(az0*Math.PI/180), ca = Math.cos(az0*Math.PI/180);
+    const hv = p => p.x*sa + p.y*ca;
+    const hs = model.points.map(hv), zs = model.points.map(p=>p.z);
+    const minH = Math.min(0,...hs), maxH = Math.max(0,...hs);
+    const maxZ = Math.max(1,...zs);
+    const padH = Math.max(1,(maxH-minH))*0.12;
+    const padZ = Math.max(1,maxZ)*0.15;
+    const mL=34, mB=24, mT=12, mR=14;
+    const pw = W2-mL-mR, ph = H2-mT-mB;
+    const h0 = minH-padH, h1 = maxH+padH, z1 = maxZ+padZ;
+    const sx = h => mL + (h-h0)/(h1-h0)*pw;
+    const sz = z => mT + ph - z/z1*ph;
+
+    let s = '';
+    const ht = niceTicks(h0, h1, 5), zt = niceTicks(0, z1, 4);
+    ht.ticks.forEach(v=>{
+      s += `<line x1="${sx(v)}" y1="${mT}" x2="${sx(v)}" y2="${H2-mB}" stroke="#2a3128" stroke-width="1"/>`;
+      s += `<text x="${sx(v)}" y="${H2-mB+10}" font-size="8" text-anchor="middle" fill="#8a8168" font-family="IBM Plex Mono">${tickLabel(v)}</text>`;
+    });
+    zt.ticks.forEach(v=>{
+      s += `<line x1="${mL}" y1="${sz(v)}" x2="${W2-mR}" y2="${sz(v)}" stroke="#2a3128" stroke-width="1"/>`;
+      s += `<text x="${mL-3}" y="${sz(v)+3}" font-size="8" text-anchor="end" fill="#8a8168" font-family="IBM Plex Mono">${tickLabel(v)}</text>`;
+    });
+    s += `<text x="${W2-mR}" y="${H2-2}" font-size="8" text-anchor="end" fill="#8a8168" font-family="IBM Plex Mono">${uLabel()}</text>`;
+    s += `<line x1="${mL}" y1="${sz(0)}" x2="${W2-mR}" y2="${sz(0)}" stroke="#7fb069" stroke-width="1.5" stroke-dasharray="2,2"/>`;
+    model.wires.forEach(w=>{
+      s += `<line x1="${sx(hv(w.from))}" y1="${sz(w.from.z)}" x2="${sx(hv(w.to))}" y2="${sz(w.to.z)}" stroke="#ffa726" stroke-width="2"/>`;
+    });
+    model.points.forEach(p=>{
+      if(p.kind==='mid') return;
+      s += `<circle cx="${sx(hv(p))}" cy="${sz(p.z)}" r="3" fill="#edeae0"/>`;
+    });
+    side.innerHTML = s;
+  }
+
+  function renderPlan(model){
+    const top = document.getElementById('svgTop');
+    if(!model.points.length){ top.innerHTML=''; return; }
+    const xs = model.points.map(p=>p.x), ys = model.points.map(p=>p.y);
+    const minX = Math.min(0,...xs), maxX = Math.max(0,...xs);
+    const minY = Math.min(0,...ys), maxY = Math.max(0,...ys);
+    const range = Math.max(maxX-minX, maxY-minY, 1);
+    const scale = (Math.min(W2,H2) - 40) / range;
+    const cxw = (minX+maxX)/2, cyw = (minY+maxY)/2;
+    const tx = x => W2/2 + (x-cxw)*scale;
+    const ty = y => H2/2 - (y-cyw)*scale; // north = up = -y in screen coords
+
+    let s = '';
+    // range rings around the feed at round-number radii
+    const farthest = Math.max(...model.points.map(p=>Math.hypot(p.x,p.y)), 1);
+    const rt = niceTicks(0, farthest*1.05, 3);
+    rt.ticks.forEach(r=>{
+      if(r<=0) return;
+      s += `<circle cx="${tx(0)}" cy="${ty(0)}" r="${r*scale}" fill="none" stroke="#2a3128" stroke-width="1"/>`;
+      s += `<text x="${tx(0)+r*scale*0.7071+2}" y="${ty(0)-r*scale*0.7071-2}" font-size="8" fill="#8a8168" font-family="IBM Plex Mono">${tickLabel(r)} ${uLabel()}</text>`;
+    });
+    s += `<line x1="${tx(0)}" y1="6" x2="${tx(0)}" y2="${H2-6}" stroke="#2a3128" stroke-width="1"/>`;
+    s += `<line x1="6" y1="${ty(0)}" x2="${W2-6}" y2="${ty(0)}" stroke="#2a3128" stroke-width="1"/>`;
+    s += `<text x="10" y="18" font-size="10" fill="#c9b896" font-family="IBM Plex Mono">N ↑</text>`;
+    model.wires.forEach(w=>{
+      s += `<line x1="${tx(w.from.x)}" y1="${ty(w.from.y)}" x2="${tx(w.to.x)}" y2="${ty(w.to.y)}" stroke="#ffa726" stroke-width="2"/>`;
+    });
+    model.points.forEach(p=>{
+      if(p.kind==='mid') return;
+      s += `<circle cx="${tx(p.x)}" cy="${ty(p.y)}" r="3" fill="#edeae0"/>`;
+    });
+    s += `<circle cx="${tx(0)}" cy="${ty(0)}" r="5" fill="none" stroke="#7fb069" stroke-width="1.5"/>`;
+    top.innerHTML = s;
+  }
+
+  // ---------- Rendering: 3D view ----------
+  // Orthographic projection; camera sits at compass bearing `yaw` and
+  // elevation `pitch` looking at the middle of the model. Screen-right is
+  // r = (-cos yaw, sin yaw, 0), screen-up is u = (-sin yaw sin pitch,
+  // -cos yaw sin pitch, cos pitch). At yaw=180 pitch=90 that is a plan
+  // view with north up and east right.
+  const W3 = 640, H3 = 340;
+
+  function render3D(model){
+    const svg = document.getElementById('svg3d');
+    if(!model.points.length){ svg.innerHTML=''; return; }
+    const xs = model.points.map(p=>p.x), ys = model.points.map(p=>p.y), zs = model.points.map(p=>p.z);
+    const minX = Math.min(0,...xs), maxX = Math.max(0,...xs);
+    const minY = Math.min(0,...ys), maxY = Math.max(0,...ys);
+    const maxZ = Math.max(1,...zs);
+    // The ground reference is a true square on Z=0 centered under the model,
+    // sized to the model's footprint (and a share of its height).
+    const cx = (minX+maxX)/2, cy = (minY+maxY)/2;
+    const side = Math.max(maxX-minX, maxY-minY, maxZ*0.5, 1) * 1.25;
+    const T = { x:cx, y:cy, z:maxZ/2 };
+    const R = Math.hypot(side/2*Math.SQRT2, maxZ/2);
+    const sc = 0.46*Math.min(W3,H3)/R * view3d.zoom;
+
+    const psi = view3d.yaw*Math.PI/180, phi = view3d.pitch*Math.PI/180;
+    const rx = -Math.cos(psi), ry = Math.sin(psi);
+    const ux = -Math.sin(psi)*Math.sin(phi), uy = -Math.cos(psi)*Math.sin(phi), uz = Math.cos(phi);
+    function P(p){
+      const dx = p.x-T.x, dy = p.y-T.y, dz = p.z-T.z;
+      return [ W3/2 + (dx*rx+dy*ry)*sc, H3/2 - (dx*ux+dy*uy+dz*uz)*sc ];
+    }
+    const L = (a,b,attrs) => { const A=P(a), B=P(b); return `<line x1="${A[0].toFixed(1)}" y1="${A[1].toFixed(1)}" x2="${B[0].toFixed(1)}" y2="${B[1].toFixed(1)}" ${attrs}/>`; };
+
+    let s = '';
+    // ground square: four lines on Z=0
+    const h = side/2;
+    const c = [ {x:cx-h,y:cy-h,z:0}, {x:cx+h,y:cy-h,z:0}, {x:cx+h,y:cy+h,z:0}, {x:cx-h,y:cy+h,z:0} ];
+    for(let i=0;i<4;i++) s += L(c[i], c[(i+1)%4], 'stroke="#7fb069" stroke-width="1.5" stroke-dasharray="4,3"');
+    const nLbl = P({x:cx, y:cy+h, z:0}), eLbl = P({x:cx+h, y:cy, z:0});
+    s += `<text x="${nLbl[0].toFixed(1)}" y="${(nLbl[1]-5).toFixed(1)}" font-size="10" text-anchor="middle" fill="#c9b896" font-family="IBM Plex Mono">N</text>`;
+    s += `<text x="${(eLbl[0]+7).toFixed(1)}" y="${(eLbl[1]+3).toFixed(1)}" font-size="10" text-anchor="middle" fill="#8a8168" font-family="IBM Plex Mono">E</text>`;
+    // drop lines from supports / radial ends to the ground
+    model.points.forEach(p=>{
+      if(p.kind==='mid' || p.z < 1e-6) return;
+      s += L(p, {x:p.x,y:p.y,z:0}, 'stroke="#3a4238" stroke-width="1" stroke-dasharray="2,3"');
+    });
+    model.wires.forEach(w=>{ s += L(w.from, w.to, 'stroke="#ffa726" stroke-width="2.2"'); });
+    model.points.forEach(p=>{
+      const q = P(p);
+      s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${p.kind==='mid'?1.5:3}" fill="#edeae0"/>`;
+    });
+    const f = P(model.feed);
+    s += `<circle cx="${f[0].toFixed(1)}" cy="${f[1].toFixed(1)}" r="6" fill="none" stroke="#7fb069" stroke-width="1.5"/>`;
+    s += `<text x="8" y="${H3-8}" font-size="9" fill="#8a8168" font-family="IBM Plex Mono">ground square: ${tickLabel(Math.round(side*10)/10)} ${uLabel()} per side · height scale ${tickLabel(Math.round(maxZ*10)/10)} ${uLabel()}</text>`;
+    svg.innerHTML = s;
+  }
+
+  function bind3D(){
+    const svg = document.getElementById('svg3d');
+    let drag = null;
+    svg.addEventListener('pointerdown', e=>{
+      drag = { x:e.clientX, y:e.clientY };
+      try { svg.setPointerCapture(e.pointerId); } catch(err){}
+    });
+    svg.addEventListener('pointermove', e=>{
+      if(!drag) return;
+      view3d.yaw = wrapAz(view3d.yaw + (e.clientX-drag.x)*0.4);
+      view3d.pitch = Math.min(90, Math.max(0, view3d.pitch + (e.clientY-drag.y)*0.4));
+      drag.x = e.clientX; drag.y = e.clientY;
+      if(lastModel) render3D(lastModel);
+    });
+    const end = ()=>{ drag = null; };
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', end);
+    svg.addEventListener('wheel', e=>{
+      e.preventDefault();
+      view3d.zoom = Math.min(6, Math.max(0.3, view3d.zoom*Math.exp(-e.deltaY*0.0015)));
+      if(lastModel) render3D(lastModel);
+    }, { passive:false });
+    root.querySelectorAll('[data-view]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const v = b.dataset.view;
+        if(v==='top'){ view3d.yaw = 180; view3d.pitch = 90; }
+        else if(v==='side'){ view3d.yaw = 180; view3d.pitch = 0; }
+        else { view3d.yaw = 165; view3d.pitch = 25; view3d.zoom = 1; }
+        if(lastModel) render3D(lastModel);
+      });
+    });
+  }
+
+  // renderOutputs() alone is safe to call on every slider-drag tick — it never
+  // touches #wgcInputs, so it can't interrupt an in-progress drag by replacing
+  // the slider's own DOM node. renderInputs() rebuilds the parameter panel and
+  // is only needed on structural changes, unit toggle, preset load, or when a
+  // typed value needs a wider slider range.
   function renderOutputs(){
-    const model = build();
+    const model = solveScene(scene);
+    lastModel = model;
+    // Wires attached to another wire start at that point's height: mirror it
+    // into state so the (read-only) height control and later edits agree.
+    model.elements.forEach(info=>{
+      const el = scene.elements.find(e=>e.id===info.id);
+      if(el && el.kind==='wire' && el.attach) el.supports[0].z = info.startZ;
+    });
     renderTable(model);
     renderSummary(model);
-    renderSagWarning(model);
+    renderWarnings(model);
     renderExport(model);
-    renderSVGs(model);
-  }
-
-  function renderInputs(){
-    document.getElementById('wgcInputs').innerHTML = `<div class="wgc-panel-label">Parameters</div>` + fieldsHTML();
-    bindInputs();
+    renderSide(model);
+    renderPlan(model);
+    render3D(model);
   }
 
   function render(){
+    sanitizeScene(scene);
     renderInputs();
     renderOutputs();
+    syncControls(null);
   }
 
-  // ---------- Unit conversion on toggle ----------
-  function convertAllUnits(newUnit){
-    if(newUnit===unit) return;
-    const factor = newUnit==='ft' ? (1/0.3048) : 0.3048; // from current unit to new
-    // Compute the raw converted values before flipping `unit`, since lenRange()
-    // (used below) reads the current unit to know which grid to snap onto.
-    const converted = {};
-    Object.keys(lengthFieldSpecs).forEach(grp=>{
-      converted[grp] = {};
-      Object.keys(lengthFieldSpecs[grp]).forEach(k=>{
-        converted[grp][k] = state[grp][k]*factor;
-      });
-    });
-    unit = newUnit;
-    // Snap each converted value onto the new unit's own slider step grid —
-    // rounding to a fixed number of decimals instead (as before) could land
-    // between two valid steps, which the browser then silently re-snaps to
-    // the nearest step on render (e.g. 10.67 m snapping to 11 with step=1).
-    Object.keys(lengthFieldSpecs).forEach(grp=>{
-      Object.keys(lengthFieldSpecs[grp]).forEach(k=>{
-        const [min,,step] = lenRange(...lengthFieldSpecs[grp][k]);
-        state[grp][k] = roundToStep(converted[grp][k], min, step);
-      });
-    });
+  // ---------- Events ----------
+  const inputsEl = document.getElementById('wgcInputs');
+
+  function refOf(inp){
+    const el = scene.elements.find(e=>e.id===inp.dataset.el);
+    const idx = inp.dataset.idx===undefined ? undefined : +inp.dataset.idx;
+    return { el, field:inp.dataset.field, idx };
   }
+
+  inputsEl.addEventListener('input', e=>{
+    const inp = e.target;
+    if(!inp.dataset || !inp.dataset.role) return;
+    const { el, field, idx } = refOf(inp);
+    if(!el) return;
+    const v = parseFloat(inp.value);
+    if(isNaN(v)) return;
+    setVal(el, field, idx, clampVal(field, v));
+    if(field==='sup.d') enforceMonotone(el);
+    // mirror into the paired control (slider <-> number box)
+    const twin = inputsEl.querySelector(`[data-role="${inp.dataset.role==='num'?'rng':'num'}"][data-el="${inp.dataset.el}"][data-field="${inp.dataset.field}"]` + (inp.dataset.idx!==undefined ? `[data-idx="${inp.dataset.idx}"]` : ''));
+    if(twin) twin.value = inp.dataset.role==='rng' ? fmtIn(parseFloat(inp.value)) : (+getVal(el, field, idx)).toFixed(6);
+    renderOutputs();
+    syncControls(inp);
+  });
+
+  inputsEl.addEventListener('change', e=>{
+    const inp = e.target;
+    if(inp.tagName==='SELECT'){
+      const el = scene.elements.find(x=>x.id===inp.dataset.el);
+      if(!el) return;
+      el.attach = parseAttach(inp.value);
+      render();
+      return;
+    }
+    if(!inp.dataset || inp.dataset.role!=='num') return;
+    const { el, field, idx } = refOf(inp);
+    if(!el) return;
+    let v = parseFloat(inp.value);
+    if(isNaN(v)) v = getVal(el, field, idx);
+    v = clampVal(field, v);
+    if(field==='az' || field==='centerAz') v = wrapAz(v);
+    setVal(el, field, idx, v);
+    if(field==='sup.d') enforceMonotone(el);
+    // Rebuild the panel only if this value wants a different slider range.
+    const rng = inputsEl.querySelector(`[data-role="rng"][data-el="${inp.dataset.el}"][data-field="${inp.dataset.field}"]` + (inp.dataset.idx!==undefined ? `[data-idx="${inp.dataset.idx}"]` : ''));
+    const spec = sliderSpec(kindOf(field), v);
+    if(rng && (+rng.max !== spec[1])){
+      render();
+    } else {
+      renderOutputs();
+      syncControls(null);
+    }
+  });
+
+  inputsEl.addEventListener('click', e=>{
+    const btn = e.target.closest('button[data-action]');
+    if(!btn) return;
+    const el = scene.elements.find(x=>x.id===btn.dataset.el);
+    const idx = btn.dataset.idx===undefined ? undefined : +btn.dataset.idx;
+    switch(btn.dataset.action){
+      case 'add-wire': addWire(scene); break;
+      case 'add-fan': addFan(scene, { attach: scene.elements.find(x=>x.kind==='wire') ? { el:scene.elements.find(x=>x.kind==='wire').id, idx:0 } : null }); break;
+      case 'remove-el': removeElement(btn.dataset.el); break;
+      case 'insert-support': if(el) insertSupport(el, idx); break;
+      case 'remove-support': if(el) removeSupport(el, idx); break;
+    }
+    render();
+  });
+
+  document.getElementById('wgcSourceSelect').addEventListener('change', e=>{
+    scene.feedEl = e.target.value;
+    renderOutputs();
+  });
+
+  const presetsEl = document.getElementById('wgcPresets');
+  PRESETS.forEach(p=>{
+    const b = document.createElement('button');
+    b.className = 'wgc-btn';
+    b.dataset.preset = p.key;
+    b.textContent = p.label;
+    presetsEl.appendChild(b);
+  });
+  presetsEl.addEventListener('click', e=>{
+    const btn = e.target.closest('button[data-preset]');
+    if(btn) loadPreset(btn.dataset.preset);
+  });
 
   document.getElementById('unitToggle').addEventListener('click', e=>{
     const btn = e.target.closest('button');
     if(!btn) return;
-    convertAllUnits(btn.dataset.unit);
+    const newUnit = btn.dataset.unit;
+    if(newUnit !== unit){
+      convertScene(scene, newUnit==='ft' ? 1/FT : FT);
+      unit = newUnit;
+    }
     root.querySelectorAll('#unitToggle button').forEach(b=>b.classList.toggle('active', b===btn));
-    render();
-  });
-
-  document.getElementById('wgcTabs').addEventListener('click', e=>{
-    const btn = e.target.closest('button');
-    if(!btn) return;
-    type = btn.dataset.type;
-    root.querySelectorAll('#wgcTabs button').forEach(b=>b.classList.toggle('active', b===btn));
     render();
   });
 
@@ -977,17 +1540,25 @@
     }
   });
 
-  // Exposes the pure geometry functions for the test suite in tests/*.html
-  // (which loads this real file in an iframe rather than keeping a separate
-  // copy, so tests can never drift out of sync with shipped behavior).
-  // Purely additive — no effect on the app itself.
-  window.WGC = { az2xy, fmt, buildSloper, buildInvV, buildSag, buildCounterpoise, solveCatenaryA, findConnection, eznecNum, mmanaNum };
+  // Exposes the pure geometry functions (and a little state access) for the
+  // test suite in tests/*.html, which loads this real file in an iframe rather
+  // than keeping a separate copy, so tests can never drift out of sync with
+  // shipped behavior. Purely additive — no effect on the app itself.
+  window.WGC = {
+    az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection,
+    eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec,
+    buildGenericExport, buildEznecExport, buildMmanaExport,
+    getScene: () => scene,
+    getUnit: () => unit,
+    loadPreset
+  };
 
+  bind3D();
   document.getElementById('wgcVersion').textContent = `${APP_VERSION} · build ${APP_BUILD}`;
 
+  scene = buildPreset('sloper');
   render();
 })();
 </script>
-
 </body>
 </html>

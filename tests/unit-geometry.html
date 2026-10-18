@@ -23,39 +23,59 @@
     document.getElementById('app').addEventListener('load', () => {
       const WGC = document.getElementById('app').contentWindow.WGC;
 
-      suite('buildSloper');
-      test('3-4-5 right triangle — wire length and elevation angle', () => {
-        const m = WGC.buildSloper({ az: 90, z1: 0, z2: 40, dist: 30 });
-        const wireLen = m.summary.find(s => s[0] === 'Wire length')[1];
-        const elev = m.summary.find(s => s[0] === 'Elevation angle')[1];
-        assert.close(wireLen, 50, 1e-9);
-        assert.close(elev, 53.13010235415598, 1e-9);
+      // Scene literals: wires are [{d,z}...] supports with per-span slack.
+      function wire(id, az, supports, slack, attach) {
+        return { id, kind: 'wire', name: id, attach: attach || null, az, supports, slack: slack || supports.slice(1).map(() => 0) };
+      }
+      function fan(id, attach, o) {
+        return Object.assign({ id, kind: 'fan', name: id, attach, n: 4, len: 25, zEnd: 0, centerAz: 270, spread: 140 }, o || {});
+      }
+      function scene(elements, feedEl) {
+        return { elements, feedEl: feedEl || elements.find(e => e.kind === 'wire').id };
+      }
+      const summaryOf = (m, label) => m.summary.find(s => s[0] === label)[1];
+
+      suite('Straight wire (two supports, no slack)');
+      test('3-4-5 right triangle — wire length', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 30, z: 40 }])]));
+        assert.close(summaryOf(m, 'W length'), 50, 1e-9);
+        assert.equal(m.wires.length, 1);
       });
       test('far end lands at the expected E/N offset for az=90 (east)', () => {
-        const m = WGC.buildSloper({ az: 90, z1: 0, z2: 40, dist: 30 });
-        const far = m.points.find(p => p.label === 'Far end');
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 30, z: 40 }])]));
+        const far = m.points[1];
         assert.close(far.x, 30, 1e-9);
         assert.close(far.y, 0, 1e-9);
         assert.close(far.z, 40, 1e-9);
       });
-
-      suite('buildInvV');
-      test('symmetric collinear V — both legs come out equal length', () => {
-        const m = WGC.buildInvV({ azApex: 90, zApex: 30, z1: 0, d1: 20, az2: 270, z2: 0, d2: 20 });
-        const len1 = m.summary.find(s => s[0] === 'Leg 1 length')[1];
-        const len2 = m.summary.find(s => s[0] === 'Leg 2 length')[1];
-        assert.close(len1, Math.sqrt(20 * 20 + 30 * 30), 1e-9);
-        assert.close(len2, len1, 1e-9);
+      test('feed (support 1) is at X=0, Y=0 with its own height', () => {
+        const m = WGC.solveScene(scene([wire('W', 45, [{ d: 0, z: 4 }, { d: 30, z: 40 }])]));
+        assert.close(m.points[0].x, 0, 1e-9);
+        assert.close(m.points[0].y, 0, 1e-9);
+        assert.close(m.points[0].z, 4, 1e-9);
+        assert.close(m.feed.z, 4, 1e-9);
       });
-      test('legs are independent — a strongly bent V is not forced collinear', () => {
-        const m = WGC.buildInvV({ azApex: 90, zApex: 30, z1: 0, d1: 20, az2: 20, z2: 5, d2: 15 });
-        const feed = m.points.find(p => p.label === 'Feed');
-        const far = m.points.find(p => p.label === 'Far end');
-        // az2 (20°) is nowhere near azApex+180 (270°): a collinear V would put
-        // feed/far in opposite directions (negative dot product); a bent V
-        // with az2 this far off should not.
-        const dot = feed.x * far.x + feed.y * far.y;
-        assert.isTrue(dot > 0, `expected feed/far-end to point into the same half-plane for a bent V, got dot=${dot}`);
+
+      suite('Peak in the middle (inverted-V as three supports)');
+      test('symmetric V — both spans equal length, three points, two wires', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 20, z: 30 }, { d: 40, z: 0 }])]));
+        assert.equal(m.wires.length, 2);
+        assert.equal(m.points.length, 3);
+        const len = Math.sqrt(20 * 20 + 30 * 30);
+        assert.close(m.wires[0].to.x, 20, 1e-9);
+        assert.close(summaryOf(m, 'W length'), 2 * len, 1e-9);
+      });
+      test('a vertical first span (L shape) stays taut and keeps the corner above the feed', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 2 }, { d: 0, z: 30 }, { d: 50, z: 30 }], [5, 0])]));
+        // slack on a vertical span is ignored: it cannot sag
+        assert.equal(m.wires.length, 2);
+        assert.close(m.points[1].x, 0, 1e-9);
+        assert.close(m.points[1].z, 30, 1e-9);
+        assert.close(summaryOf(m, 'W length'), 28 + 50, 1e-9);
+      });
+      test('support distances never run backwards (non-monotone input is clamped)', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 30, z: 10 }, { d: 10, z: 10 }])]));
+        assert.close(m.points[2].x, 30, 1e-9);
       });
 
       suite('solveCatenaryA — governing relation s²-h² = 4a²sinh²(l/2a)');
@@ -73,25 +93,94 @@
         assert.close(lhs, s * s - h * h, 1e-3 * (s * s - h * h));
       });
 
-      suite('buildSag');
-      test('valid case returns 11 waypoints / 10 segments, endpoints match feed/anchor heights', () => {
-        const m = WGC.buildSag({ az: 90, z1: 4, z2: 26, dist: 30, wireLen: 40 });
-        assert.equal(m.invalid, undefined);
+      suite('Slack → catenary sag between supports');
+      test('slack on a span gives 11 points / 10 wires with exact support heights', () => {
+        // chord = hypot(30, 22) = 37.2; slack 2.8 -> wire 40 (the old Sagging Sloper default)
+        const chord = Math.hypot(30, 22);
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 30, z: 26 }], [40 - chord])]));
         assert.equal(m.points.length, 11);
         assert.equal(m.wires.length, 10);
-        assert.close(m.points[0].z, 4, 1e-6);
-        assert.close(m.points[10].z, 26, 1e-6);
+        assert.close(m.points[0].z, 4, 1e-9);
+        assert.close(m.points[10].z, 26, 1e-9);
+        assert.close(summaryOf(m, 'W length'), 40, 1e-9);
       });
-      test('wire shorter than straight-line distance is flagged invalid', () => {
-        const m = WGC.buildSag({ az: 90, z1: 4, z2: 26, dist: 30, wireLen: 30 });
-        assert.isTrue(m.invalid);
-        assert.isAbove(m.straight, 30);
+      test('the sag curve is longer than the chord and really hangs below it', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 10 }, { d: 40, z: 10 }], [2])]));
+        const mid = m.points[5];
+        assert.isTrue(mid.z < 10 - 0.5, `expected the midpoint to hang below the supports, got z=${mid.z}`);
+        let polyline = 0;
+        m.wires.forEach(w => { polyline += Math.hypot(w.to.x - w.from.x, w.to.y - w.from.y, w.to.z - w.from.z); });
+        // 10 chords of a 42-unit curve: a hair under the true length, well above the 40-unit chord
+        assert.isTrue(polyline > 40.5 && polyline < 42.0001, `polyline length ${polyline}`);
+      });
+      test('zero slack means one straight wire, not a degenerate catenary', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 10 }, { d: 40, z: 10 }], [0])]));
+        assert.equal(m.wires.length, 1);
+      });
+      test('peak in the middle with slack on BOTH spans sags each side and shares one exact peak point', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 22, z: 32 }, { d: 40, z: 6 }], [1.5, 1.5])]));
+        assert.equal(m.wires.length, 20);
+        const peak = m.points.find(p => p.label === 'W · S2');
+        assert.close(peak.z, 32, 1e-9);
+        // wire 10 ends exactly where wire 11 begins, at the peak
+        assert.close(m.wires[9].to.x, m.wires[10].from.x, 1e-9);
+        assert.close(m.wires[9].to.z, 32, 1e-9);
+        assert.close(summaryOf(m, 'W slack'), 3, 1e-9);
+      });
+      test('slack only on one of two spans leaves the other span taut', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 22, z: 32 }, { d: 40, z: 6 }], [0, 2])]));
+        assert.equal(m.wires.length, 1 + 10);
+      });
+      test('a wire that dips below ground raises a warning', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 2 }, { d: 40, z: 2 }], [10])]));
+        assert.isTrue(m.warnings.some(w => w.kind === 'below-ground'), 'expected a below-ground warning');
+      });
+      test('a normal wire raises no warnings', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 35, z: 28 }])]));
+        assert.equal(m.warnings.length, 0);
       });
 
-      suite('buildCounterpoise — 360° spread bug fix');
+      suite('Chained wires (attach) and the feed-at-origin convention');
+      test('a wire attached to a support starts exactly at that support, with that support\'s height', () => {
+        const m = WGC.solveScene(scene([
+          wire('A', 270, [{ d: 0, z: 4 }, { d: 22, z: 32 }]),
+          wire('B', 330, [{ d: 0, z: 999 }, { d: 18, z: 6 }], [0], { el: 'A', idx: 1 })
+        ]));
+        const bStart = m.wires[1].from;
+        assert.close(bStart.x, m.wires[0].to.x, 1e-9);
+        assert.close(bStart.y, m.wires[0].to.y, 1e-9);
+        assert.close(bStart.z, 32, 1e-9, 'the attached wire\'s own supports[0].z must be ignored in favour of the attach point');
+      });
+      test('legs are independent — a bent V is not forced collinear', () => {
+        const m = WGC.solveScene(scene([
+          wire('A', 270, [{ d: 0, z: 4 }, { d: 22, z: 32 }]),
+          wire('B', 20, [{ d: 0, z: 32 }, { d: 15, z: 5 }], [0], { el: 'A', idx: 1 })
+        ]));
+        const feed = m.wires[0].from, far = m.wires[1].to;
+        const apex = m.wires[0].to;
+        const v1 = [feed.x - apex.x, feed.y - apex.y], v2 = [far.x - apex.x, far.y - apex.y];
+        const cos = (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(...v1) * Math.hypot(...v2));
+        assert.isTrue(cos > -0.9, `expected a clearly bent V, got cos(angle)=${cos}`);
+      });
+      test('if the source wire is attached partway along another wire, the model shifts so the feed is the origin', () => {
+        const m = WGC.solveScene({
+          feedEl: 'B',
+          elements: [
+            wire('A', 90, [{ d: 0, z: 10 }, { d: 50, z: 10 }]),
+            wire('B', 0, [{ d: 0, z: 0 }, { d: 20, z: 10 }], [0], { el: 'A', idx: 1 })
+          ]
+        });
+        assert.close(m.feed.x, 0, 1e-9);
+        assert.close(m.feed.y, 0, 1e-9);
+        assert.close(m.wires[1].from.x, 0, 1e-9);
+        assert.close(m.wires[0].from.x, -50, 1e-9, 'wire A should now sit 50 west of the feed');
+      });
+
+      suite('Counterpoise fan — 360° spread bug fix and attach behaviour');
+      const fanScene = o => scene([wire('W', 90, [{ d: 0, z: 1 }, { d: 30, z: 20 }]), fan('F', { el: 'W', idx: 0 }, o)]);
+      const fanEnds = m => m.points.filter(p => p.label.startsWith('F ·'));
       test('spread=360, n=4 gives four DISTINCT, evenly-spaced (90°) bearings', () => {
-        const m = WGC.buildCounterpoise({ n: 4, len: 25, zAttach: 1, zEnd: 0, centerAz: 270, spread: 360 });
-        const ends = m.points.filter(p => p.label !== 'Feed/attach');
+        const ends = fanEnds(WGC.solveScene(fanScene({ n: 4, spread: 360 })));
         assert.equal(ends.length, 4);
         for (let i = 0; i < ends.length; i++) {
           for (let j = i + 1; j < ends.length; j++) {
@@ -99,24 +188,36 @@
             assert.isAbove(d, 1, `radials ${i} and ${j} should not coincide, got distance ${d}`);
           }
         }
-        const angles = ends
-          .map(p => (Math.atan2(p.x, p.y) * 180 / Math.PI + 360) % 360)
-          .sort((a, b) => a - b);
+        const angles = ends.map(p => (Math.atan2(p.x, p.y) * 180 / Math.PI + 360) % 360).sort((a, b) => a - b);
         [0, 90, 180, 270].forEach((expected, i) => assert.close(angles[i], expected, 1e-6));
       });
       test('partial spread (140°, n=4) is unaffected by the full-circle fix', () => {
-        const m = WGC.buildCounterpoise({ n: 4, len: 25, zAttach: 1, zEnd: 0, centerAz: 270, spread: 140 });
-        const ends = m.points.filter(p => p.label !== 'Feed/attach');
-        const angles = ends
-          .map(p => (Math.atan2(p.x, p.y) * 180 / Math.PI + 360) % 360)
-          .sort((a, b) => a - b);
+        const ends = fanEnds(WGC.solveScene(fanScene({ n: 4, spread: 140 })));
+        const angles = ends.map(p => (Math.atan2(p.x, p.y) * 180 / Math.PI + 360) % 360).sort((a, b) => a - b);
         assert.close(angles[angles.length - 1] - angles[0], 140, 1e-6);
       });
       test('n=1 always places the single radial at centerAz regardless of spread', () => {
-        const m = WGC.buildCounterpoise({ n: 1, len: 25, zAttach: 1, zEnd: 0, centerAz: 45, spread: 360 });
-        const end = m.points.find(p => p.label !== 'Feed/attach');
-        const angle = (Math.atan2(end.x, end.y) * 180 / Math.PI + 360) % 360;
-        assert.close(angle, 45, 1e-6);
+        const end = fanEnds(WGC.solveScene(fanScene({ n: 1, centerAz: 45, spread: 360 })))[0];
+        assert.close((Math.atan2(end.x, end.y) * 180 / Math.PI + 360) % 360, 45, 1e-6);
+      });
+      test('radials start at the attach point and their cut length equals `len` even when elevated', () => {
+        const m = WGC.solveScene(fanScene({ n: 3, len: 25, zEnd: 0 }));
+        const radials = m.wires.filter(w => w.el === 'F');
+        radials.forEach(w => {
+          assert.close(w.from.z, 1, 1e-9);
+          assert.close(Math.hypot(w.to.x - w.from.x, w.to.y - w.from.y, w.to.z - w.from.z), 25, 1e-9);
+        });
+      });
+      test('a fan attached to the far support of a wire starts there, not at the feed', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 1 }, { d: 30, z: 20 }]), fan('F', { el: 'W', idx: 1 }, { n: 2 })]));
+        const r = m.wires.find(w => w.el === 'F');
+        assert.close(r.from.x, 30, 1e-9);
+        assert.close(r.from.z, 20, 1e-9);
+      });
+      test('a radial shorter than its height drop warns instead of producing NaN', () => {
+        const m = WGC.solveScene(fanScene({ n: 2, len: 0.5, zEnd: 0 }));
+        assert.isTrue(m.warnings.some(w => w.kind === 'fan-short'));
+        m.wires.forEach(w => assert.isTrue(isFinite(w.to.x) && isFinite(w.to.y)));
       });
 
       suite('eznecNum — coordinate formatting for the EZNEC export');
@@ -126,44 +227,39 @@
         assert.equal(WGC.eznecNum(25.945401), '25.9454');
       });
       test('snaps floating-point noise near zero to exact "0" (az2xy sin/cos artifact regression guard)', () => {
-        // e.g. az2xy(90, 30).y is ~1.8e-15, not exactly 0, due to cos(90deg) in radians.
         assert.equal(WGC.eznecNum(1.83697e-15), '0');
         assert.equal(WGC.eznecNum(-1.83697e-15), '0');
       });
 
       suite('findConnection — EZNEC "WIRES" connection-string generation');
-      test('a chain of wires links End2 of one to End1 of the next, ends of the chain are free', () => {
-        const m = WGC.buildSag({ az: 90, z1: 4, z2: 26, dist: 30, wireLen: 40 });
-        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '', 'first wire, first end should be free (the feedpoint)');
+      test('a sagged span chains End2 of one wire to End1 of the next; the chain ends are free', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 30, z: 26 }], [2.8])]));
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '');
         assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), 'W2E1');
         assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].from), 'W1E2');
         const last = m.wires.length - 1;
-        assert.equal(WGC.findConnection(m.wires, last, m.wires[last].to), '', 'last wire, last end should be free (the anchor tip)');
+        assert.equal(WGC.findConnection(m.wires, last, m.wires[last].to), '');
       });
-      test('inverted-V apex links W1 End2 to W2 End1; feed/far ends are free', () => {
-        const m = WGC.buildInvV({ azApex: 90, zApex: 30, z1: 0, d1: 20, az2: 270, z2: 0, d2: 20 });
-        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '', 'feed end is free');
-        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), 'W2E1', 'apex end of leg 1 links to leg 2');
-        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].from), 'W1E2', 'apex end of leg 2 links back to leg 1');
-        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].to), '', 'far end is free');
+      test('a peak links W1 End2 to W2 End1; feed/far ends are free', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 20, z: 30 }, { d: 40, z: 0 }])]));
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '');
+        assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), 'W2E1');
+        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].from), 'W1E2');
+        assert.equal(WGC.findConnection(m.wires, 1, m.wires[1].to), '');
       });
-      test('a single free-standing wire (straight sloper) has no connections at all', () => {
-        const m = WGC.buildSloper({ az: 90, z1: 0, z2: 40, dist: 30 });
+      test('a single free-standing wire has no connections at all', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 30, z: 40 }])]));
         assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].from), '');
         assert.equal(WGC.findConnection(m.wires, 0, m.wires[0].to), '');
       });
-      test('counterpoise radials sharing one feed point each resolve to some other radial at that point (best-effort multi-way junction)', () => {
-        const m = WGC.buildCounterpoise({ n: 4, len: 25, zAttach: 1, zEnd: 0, centerAz: 270, spread: 360 });
-        // All 4 radials share m.wires[i].from === the feed point — every
-        // radial's End1 should resolve to *some* other radial's E1, since
-        // findConnection only reports one match per multi-way junction.
-        for (let i = 0; i < m.wires.length; i++) {
-          const conn = WGC.findConnection(m.wires, i, m.wires[i].from);
-          assert.isTrue(/^W\dE1$/.test(conn), `expected radial ${i}'s feed end to link to another radial's E1, got "${conn}"`);
-        }
-        // The radial ends themselves are all free (not shared with anything).
-        for (let i = 0; i < m.wires.length; i++) {
-          assert.equal(WGC.findConnection(m.wires, i, m.wires[i].to), '');
+      test('a counterpoise fan joins the main wire at the shared attach point', () => {
+        const m = WGC.solveScene(fanScene({ n: 3, spread: 360 }));
+        assert.equal(m.wires.length, 4);
+        // wire 1's feed end is shared by every radial, so it resolves to some radial's End1
+        assert.isTrue(/^W[234]E1$/.test(WGC.findConnection(m.wires, 0, m.wires[0].from)));
+        for (let i = 1; i < m.wires.length; i++) {
+          assert.isTrue(/^W\dE1$/.test(WGC.findConnection(m.wires, i, m.wires[i].from)));
+          assert.equal(WGC.findConnection(m.wires, i, m.wires[i].to), '', 'radial tips are free');
         }
       });
 
@@ -176,6 +272,27 @@
       test('snaps floating-point noise near zero to exact "0.0"', () => {
         assert.equal(WGC.mmanaNum(1.83697e-15), '0.0');
         assert.equal(WGC.mmanaNum(-1.83697e-15), '0.0');
+      });
+
+      suite('Round-number helpers (slider ranges, grid lines)');
+      test('niceCeil rounds up to 1/2/5 x 10^k', () => {
+        assert.equal(WGC.niceCeil(100), 100);
+        assert.equal(WGC.niceCeil(101), 200);
+        assert.equal(WGC.niceCeil(3.2), 5);
+        assert.equal(WGC.niceCeil(0.07), 0.1);
+      });
+      test('niceTicks returns round-number positions covering the range', () => {
+        const t = WGC.niceTicks(-3, 47, 5);
+        assert.equal(t.step, 10);
+        assert.equal(t.ticks[0], 0);
+        assert.equal(t.ticks[t.ticks.length - 1], 40);
+      });
+      test('slider spec keeps the default range for ordinary values and widens it for big ones', () => {
+        const base = WGC.sliderSpec('dist', 35);
+        const wide = WGC.sliderSpec('dist', 400);
+        assert.equal(base[1], 150);
+        assert.isAbove(wide[1], 400);
+        assert.isAbove(wide[2], base[2]);
       });
 
       window.runTests();
