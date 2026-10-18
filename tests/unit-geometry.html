@@ -263,6 +263,20 @@
         }
       });
 
+      suite('junctionComments — shared wire ends listed in the EZNEC import file');
+      test('a chain lists each interior junction once, and free ends are not listed', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 20, z: 30 }, { d: 40, z: 0 }])]));
+        assert.equal(WGC.junctionComments(m.wires).join('|'), '; W1E2 = W2E1');
+      });
+      test('every wire end meeting at one point lands in a single group', () => {
+        const m = WGC.solveScene(fanScene({ n: 3, spread: 360 }));
+        assert.equal(WGC.junctionComments(m.wires).join('|'), '; W1E1 = W2E1 = W3E1 = W4E1');
+      });
+      test('a lone wire has no junctions', () => {
+        const m = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 0 }, { d: 30, z: 40 }])]));
+        assert.equal(WGC.junctionComments(m.wires).length, 0);
+      });
+
       suite('mmanaNum — coordinate formatting for the MMANA export');
       test('trims to 6 significant figures and always shows at least one decimal place', () => {
         assert.equal(WGC.mmanaNum(4.882890123), '4.88289');

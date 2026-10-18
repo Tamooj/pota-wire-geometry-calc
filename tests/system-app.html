@@ -268,28 +268,55 @@
         preset('sloper');
       });
 
-      suite('EZNEC export format (through the real UI)');
-      test('toggling to EZNEC format renders the WIRES-report header and chained connection strings', () => {
+      suite('EZNEC export format = "Import Wires From ASCII File" (through the real UI)');
+      const nonComment = text => text.split('\n').filter(l => l.trim() && !l.trim().startsWith(';'));
+      test('renders a units line then one 7-field line per wire (6 coordinates + diameter), comments aside', () => {
         preset('sagsloper');
         setFormat('eznec');
         const text = exportText();
-        const lines = text.split('\n');
-        assert.isTrue(lines[0].startsWith('No.'), 'expected the EZNEC header row');
-        assert.isTrue(lines[1].includes('Conn.'), 'expected the EZNEC sub-header row');
-        assert.equal(lines.length, 12, 'expected 2 header lines + 10 wire rows');
-        assert.isTrue(lines[2].includes('W2E1'), 'expected wire 1 to chain forward to wire 2');
-        assert.isTrue(lines[3].includes('W1E2'), 'expected wire 2 to chain back to wire 1');
-        assert.isTrue(text.includes('#10'), 'expected the fixed wire-spec defaults to be present');
+        const lines = nonComment(text);
+        assert.equal(lines[0], 'ft in', 'first non-comment line must be the units specifier');
+        assert.equal(lines.length, 1 + 10, 'units line + 10 sub-wires');
+        lines.slice(1).forEach((l, i) => {
+          const fields = l.split(';')[0].trim().split(/\s+/);
+          assert.equal(fields.length, 7, `wire ${i + 1}: expected 7 fields, got "${l}"`);
+          assert.equal(fields[6], '#10');
+          fields.slice(0, 6).forEach(f => assert.isTrue(/^-?\d+(\.\d+)?$/.test(f), `non-numeric coordinate "${f}"`));
+        });
         assert.isFalse(/e[+-]\d/i.test(text), 'expected no scientific-notation floating-point noise in coordinates');
+        assert.isTrue(text.startsWith(';'), 'comments are allowed first; the units line only has to precede wires');
         setFormat('generic');
         preset('sloper');
       });
-      test('a sloper plus counterpoise exports as ONE merged wire list', () => {
+      test('the units line follows the display unit (meters -> "m mm")', () => {
+        preset('sloper');
+        setUnit('m');
+        setFormat('eznec');
+        assert.equal(nonComment(exportText())[0], 'm mm');
+        setUnit('ft');
+        setFormat('generic');
+      });
+      test('a sloper plus counterpoise exports as ONE merged wire list, with its shared point listed in a comment', () => {
         preset('sloperfan');
         setFormat('eznec');
-        assert.equal(exportText().split('\n').length, 2 + 5, '2 header lines + 1 sloper wire + 4 radials');
+        const text = exportText();
+        assert.equal(nonComment(text).length, 1 + 5, 'units line + 1 sloper wire + 4 radials');
+        assert.isTrue(/^; W1E1 = W2E1 = W3E1 = W4E1 = W5E1$/m.test(text), 'expected the five wire ends that meet at the feed to be listed');
         setFormat('generic');
         preset('sloper');
+      });
+      test('no segment field is written, so EZNEC applies its own "conservative" segmentation', () => {
+        preset('sloper');
+        setFormat('eznec');
+        const fields = nonComment(exportText())[1].split(';')[0].trim().split(/\s+/);
+        assert.equal(fields.length, 7);
+        setFormat('generic');
+      });
+      test('the export panel label tells the user how to import it', () => {
+        setFormat('eznec');
+        assert.isTrue(doc.getElementById('wgcExportLabel').textContent.includes('Import Wires From ASCII File'));
+        setFormat('generic');
+        assert.isTrue(doc.getElementById('wgcExportLabel').textContent.startsWith('Plain-Text'));
       });
       test('switching back to generic format restores the plain tab-separated export', () => {
         setFormat('generic');

@@ -69,8 +69,8 @@ https://tamooj.github.io/pota-wire-geometry-calc/
   height drop.
 - **Three export formats**, toggled in the export panel:
   - **Generic** - minimal tab-separated table for manual paste
-  - **EZNEC** - approximates the layout of EZNEC Pro/2+'s own "Wires" report,
-    including `W{n}E{1|2}` connection strings that chain adjacent wires
+  - **EZNEC** - EZNEC's own wire-import file: save it as a text file, then in
+    EZNEC use **Other > Import Wires From ASCII File**
   - **MMANA** - a real MMANA-GAL `.maa`-format body, with a Frequency (MHz)
     field and a selector for which wire carries the source
 - Runs entirely client-side; nothing is sent anywhere
@@ -91,13 +91,12 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 - No ground-system loss, soil conductivity, or near-field ground modeling -
   output is geometry only, for import into a NEC-2 engine that handles the EM
   solve. Ground is drawn as the flat plane Z = 0.
-- The EZNEC and MMANA export formats approximate those tools' own file/report
-  layouts closely, but neither is a byte-verified, directly re-importable
-  native deck (not tested against the actual EZNEC/MMANA applications).
-  Typically some cut/paste into a text file is needed.
-- EZNEC-format connection strings for a point shared by 3+ wires (e.g. a
-  counterpoise fan's common attach point) are best-effort - see
-  [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats)
+- The EZNEC export follows EZNEC's documented wire-import format; the MMANA
+  export is reverse-engineered from sample files. Neither has been verified
+  against the real applications yet. The EZNEC import carries coordinates only
+  (no sources, frequency, ground or wire connections) - ends that meet are
+  listed in comments so you can check the connections in EZNEC's Wires window.
+  See [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats).
 - Counterpoise radials are straight (no sag); wire gauge is fixed at #10 AWG;
   EZNEC export uses 2 segments per wire.
 - Not yet: dipoles (feed along a wire), sloped ground, saved scenarios, native
