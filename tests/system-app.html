@@ -376,6 +376,15 @@
         setFormat('generic');
         preset('sloper');
       });
+      test('a comment names the wire that carries the feed point, since the import has no sources', () => {
+        preset('sloperfan');
+        setFormat('eznec');
+        assert.isTrue(exportText().includes('Sources window: wire 1, end 1'), 'expected the source hint for wire 1');
+        const src = doc.getElementById('wgcSourceSelect');
+        src.value = wireIds()[0];
+        setFormat('generic');
+        preset('sloper');
+      });
       test('no segment field is written, so EZNEC applies its own "conservative" segmentation', () => {
         preset('sloper');
         setFormat('eznec');
