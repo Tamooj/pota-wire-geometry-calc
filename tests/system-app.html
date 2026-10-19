@@ -325,6 +325,95 @@
         type(id, 'az', undefined, 90);
       });
 
+      suite('Feed stub and segments (through the real UI)');
+      const NL = String.fromCharCode(10);
+      const ezLines = () => { setFormat('eznec'); const t = exportText().split(NL); setFormat('generic'); return t; };
+      const ezWires = () => ezLines().filter(l => l.trim() && !l.trim().startsWith(';')).slice(1);
+      const stubBox = () => doc.querySelector('input[type="checkbox"][data-field="stubOn"]');
+      test('without the stub, a counterpoise at the feed produces a note about the multi-wire junction', () => {
+        preset('sloperfan');
+        const note = ezLines().find(l => l.includes('NOTE:'));
+        assert.isTrue(!!note, 'expected a NOTE comment');
+        assert.isTrue(note.includes('Feed stub'));
+      });
+      test('ticking the stub adds a vertical 3-segment wire as wire 1 and points the source hint at its center', () => {
+        const box = stubBox();
+        box.checked = true;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+        const lines = ezLines();
+        assert.isTrue(lines.some(l => l.includes('at W1C')), 'expected the W1C source hint');
+        assert.isFalse(lines.some(l => l.includes('NOTE:')), 'the junction note should go away');
+        const wires = ezWires();
+        assert.equal(wires.length, 1 + 1 + 4, 'stub + radiator + 4 radials');
+        const f = wires[0].split(';')[0].trim().split(' ');
+        assert.equal(f[0], f[3], 'stub is vertical (same x)');
+        assert.equal(f[7], '3', 'stub has 3 segments');
+      });
+      test('the stub length is editable and its control appears only while the stub is on', () => {
+        assert.isTrue(!!doc.querySelector('[data-el="_scene"][data-field="stub.len"][data-role="num"]'));
+        type('_scene', 'stub.len', undefined, 2);
+        const f = ezWires()[0].split(';')[0].trim().split(' ');
+        assert.close(parseFloat(f[5]) - parseFloat(f[2]), 2, 1e-6);
+        const box = stubBox();
+        box.checked = false;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.isFalse(!!doc.querySelector('[data-field="stub.len"]'));
+      });
+      test('stub settings survive loading another preset', () => {
+        const box = stubBox();
+        box.checked = true;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+        preset('sloper');
+        assert.isTrue(stubBox().checked);
+        const box2 = stubBox();
+        box2.checked = false;
+        box2.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      test('the Segments selector: Auto writes no field, Fixed writes the count, Minimum writes M', () => {
+        preset('sloper');
+        const id = wireIds()[0];
+        const sel = () => doc.querySelector('select[data-el="' + id + '"][data-field="segMode"]');
+        const fields = () => ezWires()[0].split(';')[0].trim().split(' ');
+        assert.equal(fields().length, 7);
+        sel().value = 'N';
+        sel().dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(fields()[7], '3', 'fixed defaults to 3');
+        type(id, 'segs', undefined, 11);
+        assert.equal(fields()[7], '11');
+        sel().value = 'M';
+        sel().dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(fields()[7], 'M');
+        sel().value = 'auto';
+        sel().dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(fields().length, 7);
+      });
+      test('a fixed segment count becomes the SEG value in the MMANA export', () => {
+        preset('sloper');
+        const id = wireIds()[0];
+        const sel = doc.querySelector('select[data-el="' + id + '"][data-field="segMode"]');
+        sel.value = 'N';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        type(id, 'segs', undefined, 9);
+        setFormat('mmana');
+        const line = exportText().split(NL)[5];
+        setFormat('generic');
+        assert.isTrue(line.endsWith(String.fromCharCode(9) + '9'), 'expected SEG 9, got: ' + line);
+        preset('sloper');
+      });
+      test('the unit toggle converts the stub length exactly', () => {
+        const box = stubBox();
+        box.checked = true;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+        type('_scene', 'stub.len', undefined, 1);
+        setUnit('m');
+        assert.close(win.WGC.getScene().stub.len, 0.3048, 1e-9);
+        setUnit('ft');
+        assert.close(win.WGC.getScene().stub.len, 1, 1e-9);
+        const b2 = stubBox();
+        b2.checked = false;
+        b2.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
       suite('Warnings');
       test('a sag that dips below ground shows a visible warning, and it clears when fixed', () => {
         preset('sagsloper');

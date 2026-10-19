@@ -20,7 +20,13 @@ All insertion objects (sources, loads, transmission lines, transformers, network
 - Normal/Reverse flips one winding's polarity; polarity follows each wire's end 1 to end 2 direction.
 - **Virtual segments**: enter `V1`...`V999` as the wire number to connect objects together without a wire; objects on the same virtual segment are in parallel. The manual's tutorial wires a source and a transformer port to `V4` and the other port to the feed wire/virtual segment.
 
-## What this means for the app (planned)
-1. A **feed stub**: a short wire at the feed point carrying the source, with 3 segments (source at `W#C`), so the counterpoise junction is not at the source segment. The same stub is where a 9:1 transformer's second port goes.
-2. Expose the **segments** field per wire (blank = auto, number, `M`).
-3. Export comments that say where to put the source and, for a transformer, the Rel Z values (50 and 450) and the virtual-segment recipe.
+## Counterpoise, low radials and end-fed wires (pp. 85-87, 93-94)
+- A counterpoise is just more wires to the solver: it carries current, radiates and couples like any other wire, so it changes pattern and feedpoint impedance. The manual's end-fed discussion explains why it is needed at all: a source has two terminals with equal and opposite current, so a source on the end of a lone wire sees almost an open circuit; the return path (a counterpoise, ground wire or the radio chassis) is part of the real antenna.
+- Radials very near ground: ordinary segmentation is fine at heights of at least 0.001 wavelength (and at least the vertical wire's diameter); 0.0001 to 0.001 wavelength needs segment length tapering; the minimum is 0.0001 wavelength. For wires lying on or just above the ground use the **High Accuracy Real** ground type. The same section describes the source-on-a-3-segment-stub recipe.
+
+## What this means for the app (done in v2.1.0 / build 7)
+1. **Feed stub** option: a short vertical 3-segment wire below the feed carrying the source (`W#C`), with the counterpoise attached at its bottom. Also the place for a 9:1 transformer's second port.
+2. **Segments** field per wire/fan (auto / minimum `M` / fixed).
+3. Export comments naming where the source goes, and a `NOTE:` when 3+ wires meet at an unstubbed feed.
+
+Still open: export comments with the transformer recipe (Rel Z 50 and 450, source and port 1 on one virtual segment, port 2 on the stub), and a source-segment check against the rules above.

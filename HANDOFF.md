@@ -1,6 +1,6 @@
 # Handoff: POTA Wire Antenna Geometry Calculator
 
-Context summary for a fresh session. Last updated 2026-10-18 (app **v2.0.0 · build 6**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
+Context summary for a fresh session. Last updated 2026-10-18 (app **v2.1.0 · build 7**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
 
 ## What this is
 
@@ -45,6 +45,7 @@ Everything is one screen with a **scene** of elements:
 - Old tabs survive as **presets** (Straight Sloper, Sagging Sloper, Inverted-V, Sagging Inverted-V, Inverted-L, Sloper + Counterpoise) that replace the scene.
 - Every length/angle has a **number box + slider**. Stored values are exact (typed values aren't snapped); slider ranges are unit-native and widen to a round-number ceiling when a value exceeds 90% of the default max (recomputed only at panel rebuild, never mid-drag). Unit toggle converts exactly.
 - **Wire gauge**: `scene.gauge` default + optional `element.gauge` override (AWG, sliders #10–#24, whole sizes); `solveScene` stamps each sub-wire with `gauge`; EZNEC writes `#n`, MMANA writes radius from `awgRadiusM(n)`. Loss/insulation are not importable into EZNEC so not offered. Segments field not exposed yet.
+- **Feed stub** (`scene.stub {on,len}`): a vertical 3-segment wire below the source wire's start, exported as that group's first wire; counterpoise/attached wires join at its bottom; source belongs at `W#C`. Fixes EZNEC's "source connected to multiple wires" complaint (manual: only one wire may join the end segment holding an insertion object). Gauge and stub persist across preset loads. **Segments** per element (`segs`: null/'M'/integer): EZNEC 8th field, MMANA SEG.
 - **Exports** (Generic / EZNEC / MMANA) read one merged, ordered sub-wire list. MMANA: X/Y/Z always meters; `R` = wire radius m (#10 AWG); `SEG = -1` bare integer; source `w{k}b` on the chosen source wire's first sub-wire; fixed Segmentation/ground lines copied from MMANA-GAL samples; Frequency field feeds line 3. EZNEC: the real **"Import Wires From ASCII File"** format from the EZNEC manual (Other menu): units line `ft in`/`m mm`, then `x1 y1 z1 x2 y2 z2 #10 ; label` per wire, no segments field (EZNEC auto-segments "conservative"), no sources/connections in the format; coincident ends are listed in `; W1E1 = W2E1` comments (`junctionComments()`). Whether EZNEC auto-connects coincident ends on import is UNVERIFIED — the user is testing this. (The v1.x report-replica export was not an import format; `findConnection()` remains but is unused by exports.)
 - **Views**: SVG 3D view (orthographic, drag/wheel/Top-Side-Reset; ground drawn as four lines on Z=0, drop lines, N/E labels), side profile (projected onto the first wire's azimuth), plan view; all with round-number scale labels.
 - **Warnings**: sag below ground, radial shorter than its height drop, sag solver failure.
@@ -54,7 +55,7 @@ Format sources for the exports: three real `.maa` samples in `C:\MMANA-GALBasic3
 
 ## Testing
 
-89 tests (43 unit + 46 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
+104 tests (51 unit + 53 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
 
 ## Tooling gotchas learned the hard way
 

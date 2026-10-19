@@ -485,8 +485,8 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v2.0.0';
-  const APP_BUILD = 6;
+  const APP_VERSION = 'v2.1.0';
+  const APP_BUILD = 7;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
@@ -549,7 +549,8 @@
     az:     [0,360,1],
     spread: [0,360,5],
     n:      [1,12,1],
-    gauge:  [10,24,1] // AWG; higher = thinner
+    gauge:  [10,24,1], // AWG; higher = thinner
+    stub:   { ft:[0.25,5,0.25], m:[0.1,1.5,0.05] }
   };
   const WIDENING_KINDS = ['dist','height','slack','len'];
   function sliderSpec(kind, value){
@@ -570,6 +571,8 @@
 
   // ---------- Scene model ----------
   // scene = { elements:[...], feedEl:<wire id>, seq, wireN, fanN }
+  //   scene.stub = { on, len }: optional short vertical feed-stub wire below the source wire's start.
+  //   element.segs = null (auto) | 'M' (minimum) | integer (segments per exported wire).
   //   scene.gauge = default AWG wire size; element.gauge = null (use default) or an AWG override.
   //   wire: { id, kind:'wire', name, attach:null|{el,idx}, az,
   //           supports:[{d,z}, ...],  // d = horizontal distance from the wire's
@@ -581,7 +584,7 @@
   //   fan:  { id, kind:'fan', name, attach:{el,idx}, n, len, zEnd, centerAz, spread }
   // attach: null = origin; {el,idx} = the idx-th support of an earlier wire.
   // All lengths are in the current display unit.
-  function newScene(){ return { elements:[], feedEl:null, gauge:10, seq:0, wireN:0, fanN:0 }; }
+  function newScene(){ return { elements:[], feedEl:null, gauge:10, stub:{ on:false, len:U(1) }, seq:0, wireN:0, fanN:0 }; }
 
   // Converts a feet default to the current unit; meters are rounded to 5 cm
   // so a metric preset reads 1.2 m, not 1.2192 m.
@@ -589,7 +592,7 @@
 
   function addWire(sc, o){
     const id = 'e' + (++sc.seq);
-    const el = { id, kind:'wire', name:'Wire ' + (++sc.wireN), attach:null, gauge:null, az:90,
+    const el = { id, kind:'wire', name:'Wire ' + (++sc.wireN), attach:null, gauge:null, segs:null, az:90,
                  supports:[{d:0,z:U(4)},{d:U(30),z:U(20)}], slack:[0] };
     Object.assign(el, o||{});
     sc.elements.push(el);
@@ -598,7 +601,7 @@
   }
   function addFan(sc, o){
     const id = 'e' + (++sc.seq);
-    const el = { id, kind:'fan', name:'Fan ' + (++sc.fanN), attach:null, gauge:null,
+    const el = { id, kind:'fan', name:'Fan ' + (++sc.fanN), attach:null, gauge:null, segs:null,
                  n:4, len:U(25), zEnd:0, centerAz:270, spread:140 };
     Object.assign(el, o||{});
     sc.elements.push(el);
@@ -638,6 +641,7 @@
   // Trims float noise (3.9999999999999996) left by a round trip of unit conversions.
   function r9(v){ return Math.round(v*1e9)/1e9; }
   function convertScene(sc, factor){
+    if(sc.stub) sc.stub.len = r9(sc.stub.len*factor);
     sc.elements.forEach(el=>{
       if(el.kind==='wire'){
         el.supports.forEach(s=>{ s.d = r9(s.d*factor); s.z = r9(s.z*factor); });
@@ -677,6 +681,8 @@
       seen[el.id] = { kind:el.kind, n:el.supports ? el.supports.length : 0 };
     });
     sc.gauge = clampGauge(sc.gauge);
+    if(!sc.stub) sc.stub = { on:false, len:U(1) };
+    sc.elements.forEach(e=>{ if(!(e.segs==null || e.segs==='M' || (typeof e.segs==='number' && e.segs>=1))) e.segs = null; });
     sc.elements.forEach(e=>{ if(e.gauge != null) e.gauge = clampGauge(e.gauge); });
     const feed = sc.elements.find(e=>e.id===sc.feedEl && e.kind==='wire');
     if(!feed) sc.feedEl = firstWire ? firstWire.id : null;
@@ -741,9 +747,30 @@
           const o = az2xy(el.az, d);
           return { x:start.x+o.x, y:start.y+o.y, z: i===0 ? start.z : s.z };
         });
-        anchors[el.id] = sp;
         const nSpans = sp.length-1;
         out.firstSub[el.id] = out.wires.length;
+        // Feed stub: a short vertical wire hanging below the source wire's start.
+        // Anything attached to that start joins at the stub's bottom (the junction),
+        // so the source can sit mid-stub, away from the multi-wire junction.
+        let stubLen = 0;
+        if(sc.stub && sc.stub.on && el.id === sc.feedEl){
+          if(att) out.warnings.push({ kind:'stub-attached', el:el.name });
+          else {
+            stubLen = Math.min(Math.max(0, +sc.stub.len || 0), start.z);
+            if(stubLen < 1e-6){ stubLen = 0; out.warnings.push({ kind:'stub-ground', el:el.name }); }
+          }
+        }
+        anchors[el.id] = sp;
+        if(stubLen > 0){
+          const bottom = { x:start.x, y:start.y, z:start.z - stubLen };
+          out.points.push({ ...bottom, label:`${el.name} · feed junction`, kind:'support', el:el.id });
+          out.wires.push({ label:`${el.name} feed stub`, from:{ ...bottom }, to:{ ...sp[0] }, el:el.id, stub:true });
+          out.stubIndex = out.wires.length - 1;
+          out.feedPt = { x:start.x, y:start.y, z:start.z - stubLen/2 };
+          anchors[el.id] = [ bottom, ...sp.slice(1) ];
+          total += stubLen;
+          out.summary.push([`${el.name} feed stub`, stubLen, 'length']);
+        }
         let wireLen = 0, slackSum = 0, minZ = Infinity;
         const sags = [];
         for(let i=0;i<=nSpans;i++){
@@ -817,10 +844,11 @@
     out.wires.forEach(w=>{
       const e = sc.elements.find(x=>x.id===w.el);
       w.gauge = clampGauge(e && e.gauge != null ? e.gauge : sc.gauge);
+      w.segs = w.stub ? 3 : (e && e.segs != null ? e.segs : null);
     });
     if(sc.elements.length > 1) out.summary.push(['Total wire', total, 'length']);
     const fa = anchors[sc.feedEl];
-    out.feed = fa ? { ...fa[0] } : { x:0, y:0, z:0 };
+    out.feed = out.feedPt || (fa ? { ...fa[0] } : { x:0, y:0, z:0 });
     return out;
   }
 
@@ -838,13 +866,15 @@
   // ---------- Field access for the UI ----------
   function getVal(el, field, idx){
     if(field==='gauge') return el.gauge == null ? scene.gauge : el.gauge;
+    if(field==='stub.len') return scene.stub.len;
     if(field==='sup.d') return el.supports[idx].d;
     if(field==='sup.z') return el.supports[idx].z;
     if(field==='slack') return el.slack[idx];
     return el[field];
   }
   function setVal(el, field, idx, v){
-    if(field==='sup.d') el.supports[idx].d = v;
+    if(field==='stub.len') scene.stub.len = v;
+    else if(field==='sup.d') el.supports[idx].d = v;
     else if(field==='sup.z') el.supports[idx].z = v;
     else if(field==='slack') el.slack[idx] = v;
     else el[field] = v;
@@ -853,6 +883,8 @@
     if(field==='spread') return Math.min(360, Math.max(0, v));
     if(field==='n') return Math.min(36, Math.max(1, Math.round(v)));
     if(field==='gauge') return clampGauge(v);
+    if(field==='segs') return Math.min(200, Math.max(1, Math.round(v)));
+    if(field==='stub.len') return Math.max(0.01, v);
     if(field==='len') return Math.max(0.01, v);
     if(field==='az' || field==='centerAz') return v;
     return Math.max(0, v); // sup.d, sup.z, slack, zEnd
@@ -862,6 +894,7 @@
   function kindOf(field){
     if(field==='sup.d') return 'dist';
     if(field==='sup.z' || field==='zEnd') return 'height';
+    if(field==='stub.len') return 'stub';
     return field; // slack, len, az, spread, n
   }
   // Keeps support distances non-decreasing along the wire.
@@ -902,6 +935,26 @@
         <span class="wgc-unit">AWG</span></div></div>`;
   }
 
+  // Segments per exported wire: Auto (blank, EZNEC "conservative"), Minimum ("M"), or a fixed count.
+  function segFieldHTML(el){
+    const mode = el.segs == null ? 'auto' : (el.segs === 'M' ? 'M' : 'N');
+    return `<div class="wgc-field"><label>Segments per exported wire</label><div class="wgc-ctl">
+      <select class="wgc-select" style="flex:1;" data-el="${el.id}" data-field="segMode">
+        <option value="auto"${mode==='auto' ? ' selected' : ''}>Auto (EZNEC conservative)</option>
+        <option value="M"${mode==='M' ? ' selected' : ''}>Minimum recommended</option>
+        <option value="N"${mode==='N' ? ' selected' : ''}>Fixed count</option></select>
+      ${mode==='N' ? `<input type="number" data-el="${el.id}" data-field="segs" data-role="num" min="1" max="200" step="1" value="${el.segs}">` : ''}
+      </div></div>`;
+  }
+
+  function stubPanelHTML(){
+    const on = scene.stub.on;
+    return `<div class="wgc-field" style="margin-top:4px;">
+      <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="stubOn"${on ? ' checked' : ''}> Feed stub (short wire that carries the source)</label>
+      ${on ? fieldHTML({ el:'_scene', field:'stub.len', label:'Stub length (hangs below the feed point)', value:scene.stub.len, kind:'stub' }) : ''}
+      <div class="wgc-hint">EZNEC wants the source on a wire with 3+ segments, not on an end segment where several wires meet (such as a counterpoise attached at the feed). The stub is a short vertical 3-segment wire: source at its center, counterpoise at its bottom.</div></div>`;
+  }
+
   function updateGaugeInfo(){
     document.querySelectorAll('#wgcInputs [data-gauge-info]').forEach(sp=>{
       const t = findEl(sp.dataset.gaugeInfo);
@@ -937,7 +990,8 @@
       <div class="wgc-field"><label>Starts at</label>
         <select class="wgc-select" data-el="${el.id}" data-field="attach">${attachOptionsHTML(el, listIdx)}</select></div>
       ${fieldHTML({ el:el.id, field:'az', label:'Azimuth (° from N)', value:el.az, kind:'az', suffix:'°' })}
-      ${gaugeFieldHTML(el, false)}`;
+      ${gaugeFieldHTML(el, false)}
+      ${segFieldHTML(el)}`;
     const nSup = el.supports.length;
     el.supports.forEach((s,i)=>{
       const tag = i===0 ? ' · start' : (i===nSup-1 ? ' · end' : '');
@@ -969,6 +1023,7 @@
       ${fieldHTML({ el:el.id, field:'centerAz', label:'Fan center azimuth (° from N)', value:el.centerAz, kind:'az', suffix:'°' })}
       ${fieldHTML({ el:el.id, field:'spread', label:'Fan spread (total angle)', value:el.spread, kind:'spread', suffix:'°' })}
       ${gaugeFieldHTML(el, false)}
+      ${segFieldHTML(el)}
       <div class="wgc-hint" style="margin-bottom:8px;">Radials fan evenly across the spread. Spread=360 gives an even star. Straight radials, no sag.</div>
     </div>`;
   }
@@ -983,7 +1038,8 @@
     const wireCount = scene.elements.filter(e=>e.kind==='wire').length;
     let h = `<div class="wgc-panel-label">Wires &amp; Counterpoise</div>
       <div class="wgc-hint" style="margin-bottom:10px;">A wire runs along one azimuth through its supports (distance + height). Slack between two supports hangs as a catenary; zero slack is taut. Feed is the start of the source wire.</div>
-      ${gaugeFieldHTML(scene, true)}`;
+      ${gaugeFieldHTML(scene, true)}
+      ${stubPanelHTML()}`;
     scene.elements.forEach((el,i)=>{
       h += el.kind==='wire' ? wireCardHTML(el, i, wireCount) : fanCardHTML(el, i);
     });
@@ -1003,7 +1059,7 @@
       const el = findEl(inp.dataset.el);
       if(!el) return;
       const v = getVal(el, inp.dataset.field, inp.dataset.idx===undefined ? undefined : +inp.dataset.idx);
-      if(v===undefined) return;
+      if(v===undefined || v===null) return;
       if(inp.dataset.role==='num'){
         const s = fmtIn(v);
         if(inp.value !== s) inp.value = s;
@@ -1059,7 +1115,10 @@
   }
 
   function loadPreset(key){
+    const old = scene;
     scene = buildPreset(key);
+    // wire gauge and feed-stub settings are about the build, not the geometry: keep them across presets
+    if(old){ scene.gauge = old.gauge; scene.stub = old.stub; }
     sanitizeScene(scene);
     render();
   }
@@ -1126,17 +1185,43 @@
   // as the AWG size (#10). The segment field is left out on purpose so EZNEC
   // segments each wire with its "conservative" criterion for the frequency
   // you set. Sources, frequency and ground are not part of the format.
+  // Where to put the source in EZNEC, as a comment line for the export.
+  function sourceHint(model){
+    if(model.stubIndex != null){
+      const n = model.stubIndex + 1;
+      return `; Add the source in EZNEC's Sources window at W${n}C (the center of wire ${n}, the 3-segment feed stub).`;
+    }
+    return `; Add the source in EZNEC's Sources window: wire ${(model.firstSub[scene.feedEl] || 0) + 1}, end 1 (0% from E1) is the feed point.`;
+  }
+  // How many wire ends meet at the start of the source wire.
+  function feedJunctionCount(model){
+    const w = model.wires[model.firstSub[scene.feedEl] || 0];
+    if(!w) return 0;
+    const eps = 1e-6;
+    let n = 0;
+    model.wires.forEach(o=>{
+      [o.from, o.to].forEach(p=>{
+        if(Math.abs(p.x-w.from.x)<eps && Math.abs(p.y-w.from.y)<eps && Math.abs(p.z-w.from.z)<eps) n++;
+      });
+    });
+    return n;
+  }
+
   function buildEznecExport(model){
     const lines = [
       '; Wire import file generated by Wire Antenna Geometry Calculator.',
       '; In EZNEC: Other > Import Wires From ASCII File. Sources, frequency and ground are not included.',
       `; Coordinates in ${unit==='ft' ? 'feet' : 'meters'} (X=East, Y=North, Z=Up, feed at origin); wire gauge is AWG, set per wire. Numbers use a period decimal point.`,
-      `; Add the source in EZNEC's Sources window: wire ${(model.firstSub[scene.feedEl] || 0) + 1}, end 1 (0% from E1) is the feed point.`,
+      sourceHint(model),
       unit==='ft' ? 'ft in' : 'm mm'
     ];
+    const crowd = feedJunctionCount(model);
+    if(crowd >= 3 && model.stubIndex == null){
+      lines.splice(4, 0, `; NOTE: ${crowd} wire ends meet at the feed point. EZNEC wants a source on a wire of 3+ segments, not on an end segment shared by several wires - turn on "Feed stub" in the calculator.`);
+    }
     model.wires.forEach((w,i)=>{
       const nums = [w.from.x, w.from.y, w.from.z, w.to.x, w.to.y, w.to.z].map(eznecNum).join(' ');
-      lines.push(`${nums} #${w.gauge} ; W${i+1} ${w.label}`);
+      lines.push(`${nums} #${w.gauge}${w.segs == null ? '' : ' ' + w.segs} ; W${i+1} ${w.label}`);
     });
     const junctions = junctionComments(model.wires);
     if(junctions.length){
@@ -1182,7 +1267,7 @@
         toMeters(w.to.x), toMeters(w.to.y), toMeters(w.to.z),
         awgRadiusM(w.gauge)
       ].map(mmanaNum).join(',\t');
-      lines.push(coords + ',\t-1');
+      lines.push(coords + ',\t' + (typeof w.segs === 'number' ? String(w.segs) : '-1'));
     });
     // The source goes at the beginning of the chosen source wire's first
     // sub-wire (the feed point). Delete it in MMANA if merging these wires
@@ -1233,6 +1318,8 @@
   function warningText(w){
     if(w.kind==='below-ground') return `${w.el} dips ${fmt(-w.z)} ${uLabel()} below ground at its lowest point. Raise a support or shorten the slack.`;
     if(w.kind==='fan-short') return `${w.el}: radial length is shorter than the height drop to its end, so the radials are drawn straight down. Increase the radial length.`;
+    if(w.kind==='stub-ground') return `Feed stub: the feed point of ${w.el} is at ground level, so there is no room for a stub below it. Raise the feed height or turn the stub off.`;
+    if(w.kind==='stub-attached') return `Feed stub is ignored because ${w.el} is attached to another wire.`;
     if(w.kind==='sag-failed') return `${w.el}, span ${w.span}: the slack is too large to solve a sag curve. Reduce the slack.`;
     return '';
   }
@@ -1494,10 +1581,19 @@
       render();
       return;
     }
+    if(inp.type==='checkbox' && inp.dataset.field==='stubOn'){
+      scene.stub.on = inp.checked;
+      render();
+      return;
+    }
     if(inp.tagName==='SELECT'){
       const el = scene.elements.find(x=>x.id===inp.dataset.el);
       if(!el) return;
-      el.attach = parseAttach(inp.value);
+      if(inp.dataset.field==='segMode'){
+        el.segs = inp.value==='auto' ? null : (inp.value==='M' ? 'M' : (typeof el.segs==='number' ? el.segs : 3));
+      } else {
+        el.attach = parseAttach(inp.value);
+      }
       render();
       return;
     }
@@ -1512,7 +1608,7 @@
     if(field==='sup.d') enforceMonotone(el);
     // Rebuild the panel only if this value wants a different slider range.
     const rng = inputsEl.querySelector(`[data-role="rng"][data-el="${inp.dataset.el}"][data-field="${inp.dataset.field}"]` + (inp.dataset.idx!==undefined ? `[data-idx="${inp.dataset.idx}"]` : ''));
-    const spec = sliderSpec(kindOf(field), v);
+    const spec = rng ? sliderSpec(kindOf(field), v) : null;
     if(rng && (+rng.max !== spec[1])){
       render();
     } else {
@@ -1627,7 +1723,7 @@
   // than keeping a separate copy, so tests can never drift out of sync with
   // shipped behavior. Purely additive — no effect on the app itself.
   window.WGC = {
-    az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection, junctionComments, awgDiameterIn, awgRadiusM,
+    az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection, junctionComments, awgDiameterIn, awgRadiusM, feedJunctionCount,
     eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec,
     buildGenericExport, buildEznecExport, buildMmanaExport,
     getScene: () => scene,

@@ -301,6 +301,74 @@
         assert.equal(WGC.solveScene(sc).wires[0].gauge, 24);
       });
 
+      suite('Feed stub and segments');
+      const stubScene = (o) => {
+        const sc = scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 35, z: 28 }]), fan('F', { el: 'W', idx: 0 }, { n: 3, spread: 360 })]);
+        sc.stub = Object.assign({ on: true, len: 1 }, o || {});
+        return sc;
+      };
+      test('with the stub on, wire 1 is a vertical 3-segment stub hanging below the radiator start', () => {
+        const m = WGC.solveScene(stubScene());
+        assert.equal(m.wires.length, 1 + 1 + 3);
+        const stub = m.wires[0];
+        assert.isTrue(stub.stub === true);
+        assert.close(stub.from.z, 3, 1e-9);
+        assert.close(stub.to.z, 4, 1e-9);
+        assert.close(stub.from.x, stub.to.x, 1e-9);
+        assert.equal(stub.segs, 3);
+        assert.equal(m.stubIndex, 0);
+      });
+      test('the radiator keeps its entered geometry, and the counterpoise joins at the stub bottom', () => {
+        const m = WGC.solveScene(stubScene());
+        assert.close(m.wires[1].from.z, 4, 1e-9);
+        assert.close(m.wires[1].to.z, 28, 1e-9);
+        m.wires.filter(w => w.el === 'F').forEach(w => assert.close(w.from.z, 3, 1e-9));
+      });
+      test('no wire end other than the stub bottom and the radials meets at the source segment', () => {
+        const m = WGC.solveScene(stubScene());
+        assert.equal(WGC.feedJunctionCount(m), 4, 'stub bottom + 3 radials meet at the junction; the source sits mid-stub, away from it');
+        assert.close(m.feed.z, 3.5, 1e-9, 'the feed marker is the stub center');
+      });
+      test('firstSub points at the stub when it is on, so the MMANA source lands on it', () => {
+        const m = WGC.solveScene(stubScene());
+        assert.equal(m.firstSub.W, 0);
+        const off = WGC.solveScene(stubScene({ on: false }));
+        assert.equal(off.wires.length, 1 + 3);
+        assert.equal(off.stubIndex, undefined);
+      });
+      test('a stub longer than the feed height is clamped, and a feed at ground level warns instead', () => {
+        const m = WGC.solveScene(stubScene({ len: 10 }));
+        assert.close(m.wires[0].from.z, 0, 1e-9, 'clamped to the feed height');
+        const sc = stubScene();
+        sc.elements[0].supports[0].z = 0;
+        const g = WGC.solveScene(sc);
+        assert.isTrue(g.warnings.some(w => w.kind === 'stub-ground'));
+        assert.equal(g.stubIndex, undefined);
+      });
+      test('the stub is ignored (with a warning) if the source wire is attached to another wire', () => {
+        const sc = scene([wire('A', 90, [{ d: 0, z: 4 }, { d: 20, z: 10 }]), wire('B', 0, [{ d: 0, z: 0 }, { d: 10, z: 10 }], [0], { el: 'A', idx: 1 })], 'B');
+        sc.stub = { on: true, len: 1 };
+        const m = WGC.solveScene(sc);
+        assert.isTrue(m.warnings.some(w => w.kind === 'stub-attached'));
+        assert.equal(m.stubIndex, undefined);
+      });
+      test('the stub total is included in the wire total', () => {
+        const on = WGC.solveScene(stubScene());
+        const off = WGC.solveScene(stubScene({ on: false }));
+        const total = m => m.summary.find(r => r[0] === 'Total wire')[1];
+        assert.close(total(on) - total(off), 1, 1e-6);
+      });
+      test('per-element segments are stamped onto every exported sub-wire (null = auto)', () => {
+        const sc = scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 30, z: 20 }], [3]), fan('F', { el: 'W', idx: 0 }, { n: 2 })]);
+        sc.elements[0].segs = 5;
+        sc.elements[1].segs = 'M';
+        const m = WGC.solveScene(sc);
+        m.wires.filter(w => w.el === 'W').forEach(w => assert.equal(w.segs, 5));
+        m.wires.filter(w => w.el === 'F').forEach(w => assert.equal(w.segs, 'M'));
+        const plain = WGC.solveScene(scene([wire('W', 90, [{ d: 0, z: 4 }, { d: 30, z: 20 }])]));
+        assert.equal(plain.wires[0].segs, null);
+      });
+
       suite('mmanaNum — coordinate formatting for the MMANA export');
       test('trims to 6 significant figures and always shows at least one decimal place', () => {
         assert.equal(WGC.mmanaNum(4.882890123), '4.88289');
