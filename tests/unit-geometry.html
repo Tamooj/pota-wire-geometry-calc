@@ -277,6 +277,30 @@
         assert.equal(WGC.junctionComments(m.wires).length, 0);
       });
 
+      suite('Wire gauge (AWG)');
+      test('AWG diameter formula: #10 = 0.1019 in, #22 = 0.0253 in, #16 = 0.0508 in', () => {
+        assert.close(WGC.awgDiameterIn(10), 0.1019, 0.0002);
+        assert.close(WGC.awgDiameterIn(16), 0.0508, 0.0002);
+        assert.close(WGC.awgDiameterIn(22), 0.0253, 0.0002);
+      });
+      test('radius in meters is half the diameter converted from inches', () => {
+        assert.close(WGC.awgRadiusM(10), 0.1019 / 2 * 0.0254, 1e-6);
+      });
+      test('every sub-wire carries the scene default gauge unless its element overrides it', () => {
+        const sc = scene([wire('A', 90, [{ d: 0, z: 4 }, { d: 30, z: 20 }], [3]), fan('F', { el: 'A', idx: 0 }, { n: 2, gauge: 22 })]);
+        sc.gauge = 12;
+        const m = WGC.solveScene(sc);
+        m.wires.filter(w => w.el === 'A').forEach(w => assert.equal(w.gauge, 12));
+        m.wires.filter(w => w.el === 'F').forEach(w => assert.equal(w.gauge, 22));
+      });
+      test('a missing or out-of-range gauge is clamped to #10..#24', () => {
+        const sc = scene([wire('A', 90, [{ d: 0, z: 4 }, { d: 30, z: 20 }])]);
+        const m = WGC.solveScene(sc);
+        assert.equal(m.wires[0].gauge, 10, 'no scene gauge set -> #10');
+        sc.gauge = 40;
+        assert.equal(WGC.solveScene(sc).wires[0].gauge, 24);
+      });
+
       suite('mmanaNum — coordinate formatting for the MMANA export');
       test('trims to 6 significant figures and always shows at least one decimal place', () => {
         assert.equal(WGC.mmanaNum(4.882890123), '4.88289');
@@ -307,6 +331,13 @@
         assert.equal(base[1], 150);
         assert.isAbove(wide[1], 400);
         assert.isAbove(wide[2], base[2]);
+      });
+
+      test('angle and count sliders never widen, even for values near their maximum', () => {
+        assert.equal(WGC.sliderSpec('az', 350)[1], 360);
+        assert.equal(WGC.sliderSpec('spread', 350)[1], 360);
+        assert.equal(WGC.sliderSpec('gauge', 24)[1], 24);
+        assert.equal(WGC.sliderSpec('n', 12)[1], 12);
       });
 
       window.runTests();

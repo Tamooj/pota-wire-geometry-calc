@@ -65,6 +65,7 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 - **Live views** - a rotatable **3D view** (drag, wheel, Top/Side/Reset) with a
   ground outline at Z=0, plus side-profile and plan views, all with round-number
   scale labels in the current unit.
+- **Wire gauge**: a default AWG size plus a per-wire (or per-counterpoise) override, sliders from #10 to #24; both exports use it.
 - **Warnings** when a sag dips below ground or a radial is too short for its
   height drop.
 - **Three export formats**, toggled in the export panel:
@@ -97,8 +98,7 @@ https://tamooj.github.io/pota-wire-geometry-calc/
   (no sources, frequency, ground or wire connections) - ends that meet are
   listed in comments so you can check the connections in EZNEC's Wires window.
   See [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats).
-- Counterpoise radials are straight (no sag); wire gauge is fixed at #10 AWG;
-  EZNEC export uses 2 segments per wire.
+- Counterpoise radials are straight (no sag). The EZNEC export leaves segmentation to EZNEC; MMANA uses its tapering mode.
 - Not yet: dipoles (feed along a wire), sloped ground, saved scenarios, native
   file download - see the roadmap in [docs/DESIGN.md](docs/DESIGN.md#5-known-limitations--roadmap).
 

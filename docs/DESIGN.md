@@ -56,17 +56,19 @@ The four v1 geometry types turned out to be special cases of the same thing:
 ```
 scene = { elements:[...], feedEl:<wire id>, seq, wireN, fanN }
 
-wire: { id, kind:'wire', name, attach:null | {el,idx}, az,
+wire: { id, kind:'wire', name, attach:null | {el,idx}, az, gauge:null|AWG,
         supports:[{d,z}, ...],   // >= 2; supports[0].d == 0
         slack:[...] }            // one per span (between neighbouring supports)
 
-fan:  { id, kind:'fan', name, attach:{el,idx}, n, len, zEnd, centerAz, spread }
+fan:  { id, kind:'fan', name, attach:{el,idx}, gauge:null|AWG, n, len, zEnd, centerAz, spread }
+scene.gauge = default AWG size (10)
 ```
 - A **wire** runs along a single azimuth through its **supports**. Each support has a horizontal distance from the wire's start and a height. (Distances are kept non-decreasing; negative distances are deliberately not forbidden by the data model, to leave room for dipoles — Section 5.)
 - Each **span** between neighbouring supports has its own **slack**: extra wire length beyond the straight chord. Zero slack means a taut straight wire. Positive slack means a catenary sagging between those two supports. This is per span, not per wire and not per support, so a peak in the middle with a sagging arc to an anchor on each side is just three supports with slack on both spans.
 - A vertical span (both supports at the same distance) is always taut — it has nothing to sag.
 - **Attach**: `null` means the wire starts at the origin. `{el, idx}` means it starts at support `idx` of an earlier wire, at that support's height (the attached wire's own `supports[0].z` is ignored by the solver and mirrored back into state for display). Attach references only point at *earlier* elements, so positions resolve in one pass with no cycles. This is how a bent V, or a counterpoise that must share the main antenna's feed point, is expressed.
 - A **fan** is a generator of N straight radials from its attach point, evenly spread across an arc. It deliberately has no supports or sag (the accuracy loss is minimal for counterpoises). `len` is the radial's *cut length*; its horizontal reach follows from the height drop between the attach point and the radial end (`sqrt(len² − dz²)`), so the wire you cut equals the wire modeled.
+- **Wire gauge**: `scene.gauge` is the default AWG size (#10); any wire or fan can override it with its own `gauge` (a fan's radials share one). Both are sliders (and number boxes) from **#10 to #24**, clamped and rounded to whole sizes. `solveScene` stamps every sub-wire with its resolved `gauge`, which is all the exporters read. Diameter is `0.005 * 92^((36-n)/39)` inches (#10 = 0.1019 in, #22 = 0.0253 in).
 - **Feed / source**: one wire is the source wire (default: the first). The MMANA source goes at the beginning of that wire's first sub-wire. Feeding mid-wire (dipoles) is not offered yet.
 - `sanitizeScene()` repairs invariants after any edit: at least 2 supports, slack array length, `supports[0].d = 0`, attach references valid and pointing backwards, a valid feed wire. Removing a wire detaches dependants (they fall back to the origin, fans re-attach to the first wire); inserting/removing supports renumbers attach indexes.
 
@@ -104,13 +106,13 @@ N radials fanned evenly across a total spread angle, centered on a chosen azimut
 Three formats, toggled in the export panel, all generated from the one merged, ordered wire list (elements in order; each wire's sub-wires in order along the wire):
 
 - **Generic** — tab-separated `label X1 Y1 Z1 X2 Y2 Z2`, fixed 2-decimal coordinates in the current unit.
-- **EZNEC** — EZNEC's own **"Import Wires From ASCII File"** format (Other menu), per the EZNEC user manual ("Wire Coordinate File" / "Importing Wires"): an optional units line, then one line per wire, `x1 y1 z1 x2 y2 z2 diameter [segments]`. We write `ft in` or `m mm` as the units line, space-delimited coordinates (6 significant figures via `eznecNum()`), the diameter as `#10` (AWG, accepted by the format), and a trailing `; W{n} label` comment on each wire. The optional eighth (segments) field is deliberately omitted so EZNEC segments each wire with its "conservative" criterion for the frequency you set. Text after `;` is ignored, as is any line starting with `;`. Not part of the format: sources, frequency, ground, connections — those are set inside EZNEC. After importing you choose to add the wires to, or replace, the existing description.
+- **EZNEC** — EZNEC's own **"Import Wires From ASCII File"** format (Other menu), per the EZNEC user manual ("Wire Coordinate File" / "Importing Wires"): an optional units line, then one line per wire, `x1 y1 z1 x2 y2 z2 diameter [segments]`. We write `ft in` or `m mm` as the units line, space-delimited coordinates (6 significant figures via `eznecNum()`), the diameter as `#n` per wire (the AWG gauge, accepted by the format), and a trailing `; W{n} label` comment on each wire. The optional eighth (segments) field is deliberately omitted so EZNEC segments each wire with its "conservative" criterion for the frequency you set. Text after `;` is ignored, as is any line starting with `;`. Not part of the format: sources, frequency, ground, connections — those are set inside EZNEC. After importing you choose to add the wires to, or replace, the existing description.
   - Numbers use a period decimal point; the manual says the import file must follow the Windows regional decimal setting, so a comma-decimal locale would need commas (not handled).
   - **Connections:** the format carries coordinates only. Wire ends that coincide are listed as comment lines (`; W1E1 = W2E1 = ...`, via `junctionComments()`) so you can confirm them in the Wires window. *Whether EZNEC automatically connects coincident ends on import is unverified* — check this with a sloper + counterpoise preset and look at the Conn. columns.
   - Wires of zero length or diameter are rejected by EZNEC.
   - (v1.2–v1.4 emitted a replica of EZNEC's printed "Wires" *report* instead, which is not an import format. `findConnection()` and its tests remain for the `W{n}E{1|2}` helper, now unused by the exports.)
 - **MMANA** — a `.maa`-format body (`***Wires***` / `*** Source ***` / `*** Load ***` / `*** Segmentation ***` / `*** G/H/M/R/AzEl/X ***`), reverse-engineered from three real `.maa` samples and the MMANA-GAL Basic manual. Field semantics:
-  - `Wires`: `X1,Y1,Z1,X2,Y2,Z2,R,SEG`, joined with `,\t`. X/Y/Z are **always meters**. `R` is wire *radius* in meters (`WIRE_RADIUS_M`, #10 AWG, shared with the EZNEC `#10` label). `SEG` is a segmentation *mode code*, not a count: `-1` = tapering (recommended default); it must be a bare integer.
+  - `Wires`: `X1,Y1,Z1,X2,Y2,Z2,R,SEG`, joined with `,\t`. X/Y/Z are **always meters**. `R` is wire *radius* in meters, `awgRadiusM(gauge)` per wire, from the same gauge the EZNEC export prints. `SEG` is a segmentation *mode code*, not a count: `-1` = tapering (recommended default); it must be a bare integer.
   - `Source`: `w{k}b` where `k` is the 1-based number of the first sub-wire of the chosen **source wire** (Source selector in the export panel, default: the first wire). Delete or move it in MMANA if merging into a model with its own source.
   - `Load`: always `0`. `Segmentation` / `G/H/M/R/AzEl/X`: fixed constants copied from MMANA-GAL's bundled sample files.
   - **Frequency (MHz)** number input (default 14.0) feeds line 3 of the file.
@@ -146,7 +148,7 @@ Roughly in order of likely value:
 4. **Saved scenarios** — persist named configurations (`localStorage` and/or JSON export/import) so the "go-to geometries" can be stored and recalled. Beyond the built-in presets.
 5. **Arc-length-uniform catenary waypoints**, if segment uniformity matters for steep/short spans.
 6. **Free tails** — a straight wire end that continues past the last support (dangling end). Dropped from v2.0 to avoid an under-defined end point; needs a total length and end height.
-7. **Wire gauge / segmentation guidance** — wire radius is fixed at #10 AWG (EZNEC `#10`, MMANA `R = 0.0509 in`); radius for #16 is 0.0254 in, #22 is 0.0127 in. Recommend a segment count per wire from frequency; warn when too coarse (EZNEC export is fixed at 2 segments per wire).
+7. **Segmentation guidance** — wire gauge is now selectable (default + per-wire, #10–#24). Still to do: a segments setting (EZNEC field 8: blank = "conservative", `M` = minimum, or a number) and a recommended segment count from frequency; MMANA uses `SEG = -1` (tapering). Loss/insulation can't be carried by EZNEC's import format, so they aren't offered.
 8. **Counterpoise/main-wire coupling check** — warn if radials pass too close to the main wire.
 9. **Multi-select / reorder elements** and a combined "source on any support" picker.
 
@@ -179,5 +181,6 @@ No build step, no npm dependency — tests are plain HTML pages you open in a br
 - **v1.1** — fixed the counterpoise 360° spread bug, the slider re-render jank on every drag tick, catenary bisection bracketing near zero slack, unit-toggle snapping; added the first test suite.
 - **v1.2 / v1.3** — EZNEC "Wires" report export; MMANA `.maa` export with frequency field.
 - **v1.4** — version/build indicator; Copy-button clipboard fallback.
+- **v2.2** — per-wire wire gauge (default + override, #10–#24 sliders) feeding both exports; angle/count sliders no longer widen when a value is near their maximum (a typed azimuth over ~324° used to stretch its slider to 1000).
 - **v2.1** — EZNEC export switched from the report replica to the real ASCII wire-import format (see Section 3.5).
 - **v2.0** — this rewrite: one wires-and-supports model replacing the tabs; per-span slack (so any wire can sag, closing the old "sag for inverted-V legs" item); multi-element scenes (a counterpoise attaches to a support instead of being matched by hand) with one merged export and a source selector; number boxes beside every slider; unit-native, value-adaptive slider ranges; 3D view with ground square; round-number scale labels on all views; feed-at-origin convention made true for every geometry; radial `len` now means cut length.

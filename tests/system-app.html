@@ -254,6 +254,77 @@
         preset('sloper');
       });
 
+      suite('Wire gauge control (default + per-wire override)');
+      const gaugeCtl = (elId, role) => doc.querySelector('[data-el="' + elId + '"][data-field="gauge"][data-role="' + role + '"]');
+      const ezWireLines = () => { setFormat('eznec'); const t = exportText().split('\n').filter(l => l.trim() && !l.trim().startsWith(';')).slice(1); setFormat('generic'); return t; };
+      test('the gauge sliders run from #10 to #24', () => {
+        preset('sloperfan');
+        const r = gaugeCtl('_scene', 'rng');
+        assert.equal(r.min, '10');
+        assert.equal(r.max, '24');
+        assert.equal(r.step, '1');
+      });
+      test('the default gauge applies to every wire that does not override it', () => {
+        const r = gaugeCtl('_scene', 'rng');
+        r.value = 14;
+        r.dispatchEvent(new Event('input', { bubbles: true }));
+        const lines = ezWireLines();
+        assert.equal(lines.length, 5);
+        lines.forEach(l => assert.isTrue(l.includes('#14'), 'expected #14 in: ' + l));
+        assert.equal(gaugeCtl(scene().elements[0].id, 'num').value, '14', 'a non-overriding wire shows the default');
+        assert.equal(gaugeCtl(scene().elements[0].id, 'num').disabled, true);
+      });
+      test('overriding one element changes only its wires (EZNEC)', () => {
+        const fanId = scene().elements[1].id;
+        const cb = doc.querySelector('input[type="checkbox"][data-el="' + fanId + '"][data-field="gaugeOwn"]');
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        const r = gaugeCtl(fanId, 'rng');
+        assert.equal(r.disabled, false);
+        r.value = 22;
+        r.dispatchEvent(new Event('input', { bubbles: true }));
+        const lines = ezWireLines();
+        assert.isTrue(lines[0].includes('#14'));
+        lines.slice(1).forEach(l => assert.isTrue(l.includes('#22'), 'expected #22 in: ' + l));
+      });
+      test('MMANA wire radius follows the gauge of each wire', () => {
+        setFormat('mmana');
+        const rows = exportText().split('\n').slice(5, 10).map(l => parseFloat(l.split(',\t')[6]));
+        setFormat('generic');
+        assert.close(rows[0], win.WGC.awgRadiusM(14), 1e-6);
+        assert.close(rows[1], win.WGC.awgRadiusM(22), 1e-6);
+        assert.isTrue(rows[1] < rows[0], 'a #22 radial is thinner than a #14 radiator');
+      });
+      test('unticking the override returns the element to the default', () => {
+        const fanId = scene().elements[1].id;
+        const cb = doc.querySelector('input[type="checkbox"][data-el="' + fanId + '"][data-field="gaugeOwn"]');
+        cb.checked = false;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(scene().elements[1].gauge, null);
+        ezWireLines().forEach(l => assert.isTrue(l.includes('#14')));
+        preset('sloper');
+      });
+      test('typing a gauge outside the range clamps it to #10..#24', () => {
+        preset('sloper');
+        const n = gaugeCtl('_scene', 'num');
+        n.value = '30';
+        n.dispatchEvent(new Event('input', { bubbles: true }));
+        n.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(win.WGC.getScene().gauge, 24);
+        preset('sloper');
+        const n2 = gaugeCtl('_scene', 'num');
+        n2.value = '10';
+        n2.dispatchEvent(new Event('input', { bubbles: true }));
+        n2.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      test('angle sliders keep their 0-360 range when a large bearing is typed', () => {
+        preset('sloper');
+        const id = wireIds()[0];
+        type(id, 'az', undefined, 350);
+        assert.equal(ctl(id, 'az', undefined, 'rng').max, '360');
+        type(id, 'az', undefined, 90);
+      });
+
       suite('Warnings');
       test('a sag that dips below ground shows a visible warning, and it clears when fixed', () => {
         preset('sagsloper');
