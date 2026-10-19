@@ -4,16 +4,16 @@ Context summary for a fresh session. Last updated 2026-10-19 (app **v2.3.1 · bu
 
 ## What this is
 
-A single-file, vanilla-JS browser tool (`index.html`) that turns field-measurable numbers (support heights, distances, compass bearings, wire slack) into 3D wire coordinates for **NEC-2 antenna modeling software** (EZNEC, MMANA-GAL). It does **not** simulate anything; it is a geometry front-end that feeds those tools. It started as a mobile field sketching tool and has also become a much nicer way to enter catenary arcs and counterpoise sets into the (Win 3.1-style) modeling tools.
+A single-file, vanilla-JS browser tool (`ham-wire-sketch.html`) that turns field-measurable numbers (support heights, distances, compass bearings, wire slack) into 3D wire coordinates for **NEC-2 antenna modeling software** (EZNEC, MMANA-GAL). It does **not** simulate anything; it is a geometry front-end that feeds those tools. It started as a mobile field sketching tool and has also become a much nicer way to enter catenary arcs and counterpoise sets into the (Win 3.1-style) modeling tools.
 
-- Repo: https://github.com/Tamooj/pota-wire-geometry-calc (public, MIT, GitHub Pages at https://tamooj.github.io/pota-wire-geometry-calc/)
+- Repo: https://github.com/Tamooj/pota-wire-geometry-calc (public, MIT, GitHub Pages at https://tamooj.github.io/pota-wire-geometry-calc/ham-wire-sketch.html)
 - Owner: Tamooj (a ham doing POTA with random-wire antennas on a 9:1 unun)
 
 ## Working agreements
 
 - **The shipped runtime artifact stays a single HTML file** (no build step, no runtime dependencies; opens from `file://`). Dev/test tooling may be multiple files. Node.js is not installed; Python 3 is.
 - **Work locally on `main` only; commit and push each time** (the user said so for this phase).
-- **Bump `APP_BUILD` (and `APP_VERSION` for milestones) in `index.html` on every edit.** It renders bottom-right as `vX.Y.Z · build N` and exists because stale cached copies caused repeated phantom-bug confusion. When the user reports odd behavior, first ask what build number they see.
+- **Bump `APP_BUILD` (and `APP_VERSION` for milestones) in `ham-wire-sketch.html` on every edit.** It renders bottom-right as `vX.Y.Z · build N` and exists because stale cached copies caused repeated phantom-bug confusion. When the user reports odd behavior, first ask what build number they see.
 - Don't credit or reference the q-primer project in docs. Concise answers and direct, recommended choices over option surveys.
 - Keep `docs/DESIGN.md` in sync with behavior changes and keep the tests green. Verify UI changes in the browser preview before reporting done.
 
@@ -24,11 +24,11 @@ A single-file, vanilla-JS browser tool (`index.html`) that turns field-measurabl
 ## Repo layout
 
 ```
-index.html                  the whole app (HTML + CSS + JS inline)
+ham-wire-sketch.html                  the whole app (HTML + CSS + JS inline)
 README.md                   user-facing intro
 docs/DESIGN.md              design record: model, catenary derivation, exports, architecture, roadmap
 tests/harness.js            ~70-line hand-rolled suite()/test()/assert framework
-tests/unit-geometry.html    unit tests; load real index.html in an iframe, call window.WGC
+tests/unit-geometry.html    unit tests; load real ham-wire-sketch.html in an iframe, call window.WGC
 tests/system-app.html       system tests; drive the real DOM in an iframe
 .claude/launch.json         python -m http.server 8420 config for the preview tool
 HANDOFF.md                  this file
@@ -59,7 +59,7 @@ Format sources for the exports: three real `.maa` samples in `C:\MMANA-GALBasic3
 
 ## Tooling gotchas learned the hard way
 
-- A dropped closing brace in `index.html` can break every handler silently; to find it, extract the `<script>` body and `eval` it in a try/catch to get the `SyntaxError`.
+- A dropped closing brace in `ham-wire-sketch.html` can break every handler silently; to find it, extract the `<script>` body and `eval` it in a try/catch to get the `SyntaxError`.
 - Navigate with a cache-busting query (`?x=` + `Math.random()`); a plain reload may reuse a cached copy.
 - The preview tool's click simulation can drag through range sliders and corrupt values; use `javascript_exec` with direct `.click()` and `dispatchEvent(new Event('input', {bubbles:true}))` (then `'change'` for number boxes).
 - A `<textarea>`'s `.value` normalizes `\r\n` to `\n`, so real `.maa` CRLF can't be produced through the export box.

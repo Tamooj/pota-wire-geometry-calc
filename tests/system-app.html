@@ -7,7 +7,7 @@
 <body style="font-family: sans-serif; padding: 16px;">
   <h2 style="font-family:monospace;">Wire Geometry Calculator — system tests (real DOM, real events)</h2>
   <p style="font-family:monospace; font-size:12px; color:#555; max-width:640px;">
-    Loads the real <code>../index.html</code> in an iframe and drives it like
+    Loads the real <code>../ham-wire-sketch.html</code> in an iframe and drives it like
     a user would — clicking presets, dragging sliders and typing in number
     boxes (dispatching real <code>input</code>/<code>change</code> events) — then
     inspects the resulting DOM. If this page was opened directly via
@@ -22,9 +22,9 @@
 
   <script src="harness.js"></script>
   <script>
-    // Cache-bust the iframe load — a static src="../index.html" can otherwise
+    // Cache-bust the iframe load — a static src="../ham-wire-sketch.html" can otherwise
     // serve a stale cached copy across test iterations during development.
-    document.getElementById('app').src = '../index.html?nosave=1&_t=' + Date.now();
+    document.getElementById('app').src = '../ham-wire-sketch.html?nosave=1&_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const win = document.getElementById('app').contentWindow;
       const doc = win.document;

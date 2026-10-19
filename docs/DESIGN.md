@@ -1,7 +1,7 @@
 # Wire Antenna Geometry Calculator — Design Doc
 
 **Status:** v2.0.x (EZNEC export is now the real import format) — rewritten around a single wires-and-supports model (replaces the four per-type tabs); multi-wire scenes with a merged export, number boxes beside sliders, unit-native slider ranges, a 3D view. v1.x history is summarized in Section 8. Covered by tests (see [tests/](../tests/)). Reference notes from the EZNEC manual: [EZNEC-notes.md](EZNEC-notes.md).
-**Artifact:** [`index.html`](../index.html) (single-file, vanilla JS, no build step)
+**Artifact:** [`ham-wire-sketch.html`](../ham-wire-sketch.html) (single-file, vanilla JS, no build step)
 **Purpose:** Generate EZNEC/MMANA-ready wire coordinates for field-deployable POTA antenna geometries, ahead of time, so geometry doesn't get worked out on-site — and, as it turned out, to make entering catenary arcs and counterpoise sets into those (Win 3.1-style) modeling tools far less painful.
 
 ---
@@ -146,9 +146,9 @@ Three formats, toggled in the export panel, all generated from the one merged, o
   - **3D** (`render3D`): orthographic projection, SVG, drag to rotate / wheel to zoom / Top-Side-Reset buttons. The camera sits at compass bearing `yaw`, elevation `pitch`; screen-right `r = (−cos yaw, sin yaw, 0)`, screen-up `u = (−sin yaw sin pitch, −cos yaw sin pitch, cos pitch)`, so yaw 180 / pitch 90 is a plan view with N up. Draws a **ground square as four lines on Z = 0** (a true square centered under the model's footprint, sized to the larger footprint dimension and a share of the height; deliberately not an opaque fill), N/E labels, dashed drop lines from supports to the ground, and a ring on the feed.
   - **Side profile**: projects onto the vertical plane along the *first wire's* azimuth (title says which). Wires in other directions are foreshortened — the 3D view shows them true. Round-number gridlines and tick labels in the current unit.
   - **Plan**: centered on the model's bounding box, round-number range rings around the feed with labels.
-- **Testability hook:** `window.WGC = { az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection, eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec, build*Export, getScene, getUnit, loadPreset }` — additive, no effect on the app. The test pages load the real `index.html` in an iframe, so tests can never drift from shipped code.
+- **Testability hook:** `window.WGC = { az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection, eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec, build*Export, getScene, getUnit, loadPreset }` — additive, no effect on the app. The test pages load the real `ham-wire-sketch.html` in an iframe, so tests can never drift from shipped code.
 - **Saving (v2.3):** `modelSnapshot()` is `{app, format, version, unit, exportFormat, scene}`. It is written to `localStorage['wgc.model.v1']` 300 ms after the last change (`scheduleSave`) and restored at start-up (`loadSaved`); Save model downloads the same object as JSON, Load model reads one. Anything read from storage or a file goes through `validateModel()` first (element types, numeric fields, supports, attach references) and is rejected whole if it does not pass, in which case the app starts from its default preset; `applyModel()` then restores unit, export format and scene, re-seeds the id counters, and runs `sanitizeScene`. Storage is per browser and per address (`file://`, localhost and the GitHub Pages copy each have their own), which is what the JSON file is for. The test pages load the app with `?nosave=1`, which disables reading and writing saved state so tests cannot touch a real saved model.
-- **Version/build indicator:** `APP_VERSION`/`APP_BUILD`, rendered bottom-right as `vX.Y.Z · build N`. **Bump `APP_BUILD` on every edit to `index.html`, no matter how small** — it exists so a glance confirms you're not looking at a stale cached copy, which caused repeated phantom-bug confusion during development. Bump `APP_VERSION` for milestones.
+- **Version/build indicator:** `APP_VERSION`/`APP_BUILD`, rendered bottom-right as `vX.Y.Z · build N`. **Bump `APP_BUILD` on every edit to `ham-wire-sketch.html`, no matter how small** — it exists so a glance confirms you're not looking at a stale cached copy, which caused repeated phantom-bug confusion during development. Bump `APP_VERSION` for milestones.
 - **Copy button:** tries `navigator.clipboard.writeText`, falls back to `document.execCommand('copy')`, and shows a red "Select text & Ctrl+C" state if both fail (the Clipboard API needs a secure context, so it fails silently on `file://`).
 
 ---
@@ -171,9 +171,9 @@ Roughly in order of likely value:
 
 ## 6. File Reference
 
-- [`index.html`](../index.html) — the tool itself, self-contained, opens in any browser or serves via GitHub Pages.
+- [`ham-wire-sketch.html`](../ham-wire-sketch.html) — the tool itself, self-contained, opens in any browser or serves via GitHub Pages.
 - [`tests/`](../tests/) — unit and system tests; see Section 7.
-- This document — the design record; keep it in sync with `index.html`.
+- This document — the design record; keep it in sync with `ham-wire-sketch.html`.
 - [`HANDOFF.md`](../HANDOFF.md) — session-transfer summary for a fresh agent.
 
 ---
@@ -183,7 +183,7 @@ Roughly in order of likely value:
 No build step, no npm dependency — tests are plain HTML pages you open in a browser.
 
 - **[tests/harness.js](../tests/harness.js)** — ~70-line hand-rolled `suite()`/`test()`/`assert` framework shared by both pages, rendering a pass/fail dashboard.
-- **[tests/unit-geometry.html](../tests/unit-geometry.html)** — loads the real `../index.html` in a hidden iframe and calls the exposed `window.WGC` functions with literal scene objects. Covers straight wires, peaks and an L, catenary governing relation (incl. near-zero slack), slack → sag (point/wire counts, exact support heights, both-sides sag with one shared peak, vertical span taut, below-ground warning), attach chaining and bent V, feed-at-origin shifting, fan behaviour (360° fix, true cut length, attach point), `findConnection`, number formatters, and the round-number helpers.
+- **[tests/unit-geometry.html](../tests/unit-geometry.html)** — loads the real `../ham-wire-sketch.html` in a hidden iframe and calls the exposed `window.WGC` functions with literal scene objects. Covers straight wires, peaks and an L, catenary governing relation (incl. near-zero slack), slack → sag (point/wire counts, exact support heights, both-sides sag with one shared peak, vertical span taut, below-ground warning), attach chaining and bent V, feed-at-origin shifting, fan behaviour (360° fix, true cut length, attach point), `findConnection`, number formatters, and the round-number helpers.
 - **[tests/system-app.html](../tests/system-app.html)** — drives the real DOM: presets, slider-drag node survival, number-box entry (exact storage, slider range widening and returning to default, azimuth wrap, clamping, support ordering), unit toggle (exact round trip, native steps, metric presets), adding/inserting/removing wires, supports and fans, the fan through the export pipeline, warnings, the EZNEC/MMANA/generic exports end to end (merged wire list, source selector, meters-always), the 3D ground square and camera buttons, scale labels, and the copy button's fallbacks.
 
 **To run:** serve the repo root with `python -m http.server 8420` and open `http://localhost:8420/tests/unit-geometry.html` and `.../system-app.html` (a plain `file://` open works in most browsers but some restrict script access across iframes). Results render on the page; `window.__TEST_SUMMARY__` holds `{total, passed, failed}`. Both pages set the iframe's `src` from JS with a `?_t=Date.now()` cache-buster — a static `src` was observed to serve a stale copy of the app.

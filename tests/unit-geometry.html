@@ -7,7 +7,7 @@
 <body style="font-family: sans-serif; padding: 16px;">
   <h2 style="font-family:monospace;">Wire Geometry Calculator — unit tests (geometry math)</h2>
   <p style="font-family:monospace; font-size:12px; color:#555; max-width:640px;">
-    Loads the real <code>../index.html</code> in a hidden iframe and calls its
+    Loads the real <code>../ham-wire-sketch.html</code> in a hidden iframe and calls its
     exposed <code>window.WGC</code> pure functions directly, rather than
     keeping a separate copy of the math — so these tests can never silently
     drift out of sync with what's actually shipped.
@@ -17,9 +17,9 @@
 
   <script src="harness.js"></script>
   <script>
-    // Cache-bust the iframe load — a static src="../index.html" can otherwise
+    // Cache-bust the iframe load — a static src="../ham-wire-sketch.html" can otherwise
     // serve a stale cached copy across test iterations during development.
-    document.getElementById('app').src = '../index.html?nosave=1&_t=' + Date.now();
+    document.getElementById('app').src = '../ham-wire-sketch.html?nosave=1&_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const WGC = document.getElementById('app').contentWindow.WGC;
 

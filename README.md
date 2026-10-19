@@ -32,12 +32,12 @@ involving graph paper and trigonometry.
 
 ## Try it
 
-Download and open [`index.html`](index.html) directly in any browser - no build step, no
+Download and open [`ham-wire-sketch.html`](ham-wire-sketch.html) directly in any browser - no build step, no
 dependencies, no server required. Or, if GitHub Pages is enabled for this
 repo, use the hosted version at:
 
 ```
-https://tamooj.github.io/pota-wire-geometry-calc/
+https://tamooj.github.io/pota-wire-geometry-calc/ham-wire-sketch.html
 ```
 
 ## Features
@@ -149,7 +149,7 @@ build step or dependencies, matching the tool itself. Open
 tabs, sliders, unit toggle) directly in a browser, or serve the repo root
 (`python -m http.server`) and open them at `http://localhost:8000/tests/...`
 — serving avoids some browsers' restrictions on script access across `file://`
-iframe boundaries. Both pages load the real `index.html`, so tests can't drift
+iframe boundaries. Both pages load the real `ham-wire-sketch.html`, so tests can't drift
 out of sync with what's actually shipped. See
 [docs/DESIGN.md §7](docs/DESIGN.md#7-testing) for details.
 
