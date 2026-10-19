@@ -174,7 +174,6 @@ Roughly in order of likely value:
 - [`ham-wire-sketch.html`](../ham-wire-sketch.html) — the tool itself, self-contained, opens in any browser or serves via GitHub Pages.
 - [`tests/`](../tests/) — unit and system tests; see Section 7.
 - This document — the design record; keep it in sync with `ham-wire-sketch.html`.
-- [`HANDOFF.md`](../HANDOFF.md) — session-transfer summary for a fresh agent.
 
 ---
 
