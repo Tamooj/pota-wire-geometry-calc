@@ -458,7 +458,7 @@
               SOURCE
               <select id="wgcSourceSelect" class="wgc-select" style="width:auto;"></select>
             </label>
-            <label style="display:flex; align-items:center; gap:4px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--khaki-dim);" title="Design frequency, used by the MMANA export (MMANA has no geometry-derived default for this).">
+            <label style="display:flex; align-items:center; gap:4px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--khaki-dim);" title="Design frequency: sets the longest segment (wavelength / divisor) of the graded segments, and is the frequency line of the MMANA export.">
               FREQ
               <input type="number" id="mmanaFreqInput" value="14.0" min="0.1" max="3000" step="0.01" style="width:60px;">
               MHz
@@ -485,14 +485,13 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v2.1.0';
-  const APP_BUILD = 7;
+  const APP_VERSION = 'v2.2.0';
+  const APP_BUILD = 8;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
   let unit = 'ft';
   let exportFormat = 'generic';
-  let mmanaFreq = 14.0;
   let scene = null;      // see "Scene model" below
   let lastModel = null;  // most recent solveScene() result, for view-only redraws
   const view3d = { yaw:165, pitch:25, zoom:1 };
@@ -550,7 +549,9 @@
     spread: [0,360,5],
     n:      [1,12,1],
     gauge:  [10,24,1], // AWG; higher = thinner
-    stub:   { ft:[0.25,5,0.25], m:[0.1,1.5,0.05] }
+    fine:   { ft:[0.02,1,0.02], m:[0.005,0.3,0.005] },
+    ratio:  [1.05,3,0.05],
+    div:    [4,60,1]
   };
   const WIDENING_KINDS = ['dist','height','slack','len'];
   function sliderSpec(kind, value){
@@ -571,7 +572,9 @@
 
   // ---------- Scene model ----------
   // scene = { elements:[...], feedEl:<wire id>, seq, wireN, fanN }
-  //   scene.stub = { on, len }: optional short vertical feed-stub wire below the source wire's start.
+  //   scene.taper = { on, fine, ratio, div }: graded segmentation. The source wire starts with a 3-segment
+  //   feed section (3 equal segments of length `fine`); segments then grow by `ratio` up to wavelength/div.
+  //   Wires/radials that start at the feed point are graded outward from it too. scene.freq = design MHz.
   //   element.segs = null (auto) | 'M' (minimum) | integer (segments per exported wire).
   //   scene.gauge = default AWG wire size; element.gauge = null (use default) or an AWG override.
   //   wire: { id, kind:'wire', name, attach:null|{el,idx}, az,
@@ -584,7 +587,7 @@
   //   fan:  { id, kind:'fan', name, attach:{el,idx}, n, len, zEnd, centerAz, spread }
   // attach: null = origin; {el,idx} = the idx-th support of an earlier wire.
   // All lengths are in the current display unit.
-  function newScene(){ return { elements:[], feedEl:null, gauge:10, stub:{ on:false, len:U(1) }, seq:0, wireN:0, fanN:0 }; }
+  function newScene(){ return { elements:[], feedEl:null, gauge:10, freq:14, taper:{ on:true, fine:(unit==='ft' ? 0.1 : 0.03), ratio:1.5, div:20 }, seq:0, wireN:0, fanN:0 }; }
 
   // Converts a feet default to the current unit; meters are rounded to 5 cm
   // so a metric preset reads 1.2 m, not 1.2192 m.
@@ -641,7 +644,7 @@
   // Trims float noise (3.9999999999999996) left by a round trip of unit conversions.
   function r9(v){ return Math.round(v*1e9)/1e9; }
   function convertScene(sc, factor){
-    if(sc.stub) sc.stub.len = r9(sc.stub.len*factor);
+    if(sc.taper) sc.taper.fine = r9(sc.taper.fine*factor);
     sc.elements.forEach(el=>{
       if(el.kind==='wire'){
         el.supports.forEach(s=>{ s.d = r9(s.d*factor); s.z = r9(s.z*factor); });
@@ -681,7 +684,8 @@
       seen[el.id] = { kind:el.kind, n:el.supports ? el.supports.length : 0 };
     });
     sc.gauge = clampGauge(sc.gauge);
-    if(!sc.stub) sc.stub = { on:false, len:U(1) };
+    if(!sc.taper) sc.taper = { on:true, fine:(unit==='ft' ? 0.1 : 0.03), ratio:1.5, div:20 };
+    if(!(sc.freq > 0)) sc.freq = 14;
     sc.elements.forEach(e=>{ if(!(e.segs==null || e.segs==='M' || (typeof e.segs==='number' && e.segs>=1))) e.segs = null; });
     sc.elements.forEach(e=>{ if(e.gauge != null) e.gauge = clampGauge(e.gauge); });
     const feed = sc.elements.find(e=>e.id===sc.feedEl && e.kind==='wire');
@@ -723,6 +727,120 @@
     return { pts, maxSag };
   }
 
+  // Catenary between two supports, with an arc-length parametrisation: arc(x) =
+  // a*sinh((x-xv)/a) - a*sinh(-xv/a), so a node at arc length s sits at
+  // x = xv + a*asinh((s + s0)/a), z = zAt(x). `s` here is chord + slack, the true
+  // wire length. Returns null if the numbers blow up.
+  function catenaryCurve(l,h,s){
+    const a = solveCatenaryA(l,h,s);
+    const xv = (l/2) - a*Math.asinh(h/(2*a*Math.sinh(l/(2*a))));
+    const C = -a*Math.cosh(xv/a);
+    const zAt = x => a*Math.cosh((x-xv)/a) + C;
+    const s0 = a*Math.sinh(-xv/a);
+    const xAtS = arc => xv + a*Math.asinh((arc + s0)/a);
+    if(![a, xv, C, s0].every(isFinite) || !isFinite(zAt(l/2))) return null;
+    let maxSag = 0;
+    for(let i=0;i<=100;i++){
+      const x = i/100*l;
+      const sag = h*(x/l) - zAt(x);
+      if(sag > maxSag) maxSag = sag;
+    }
+    return { a, xv, zAt, xAtS, maxSag };
+  }
+
+  // Segment lengths (in order from the start) that begin at startLen, grow by
+  // `ratio` per segment up to maxLen, then continue as equal segments of about
+  // maxLen, summing exactly to S. A leftover shorter than half a segment is
+  // absorbed into the previous segment instead of making an abrupt short one.
+  function taperedLengths(S, startLen, ratio, maxLen){
+    const out = [];
+    if(!(S > 1e-12)) return out;
+    let sum = 0, l = Math.min(Math.max(startLen, 1e-9), maxLen);
+    while(l < maxLen*(1-1e-9) && sum + l < S - 1e-12){
+      out.push(l); sum += l; l = Math.min(l*ratio, maxLen);
+    }
+    const R = S - sum;
+    if(R > 1e-12){
+      if(R < 0.5*l && out.length) out[out.length-1] += R;
+      else {
+        const n = Math.max(1, Math.round(R/l));
+        for(let i=0;i<n;i++) out.push(R/n);
+      }
+    }
+    return out;
+  }
+
+  // Graded-segment parameters in the current unit, or null if grading is off.
+  // The longest segment is wavelength / div at the design frequency.
+  function taperParams(sc){
+    const t = sc.taper;
+    if(!t || !t.on) return null;
+    const lambda = 299.792458 / Math.max(0.001, sc.freq || 14) * (unit==='ft' ? 3.28084 : 1);
+    const maxLen = lambda / Math.max(2, t.div || 20);
+    return { fine:Math.min(Math.max(1e-6, +t.fine || 0), maxLen), ratio:Math.max(1.05, +t.ratio || 1.5), maxLen };
+  }
+
+  // Emits one span (or one radial) as graded wires. The feed span starts with a
+  // single 3-segment "feed section" wire; ramp segments are 1-segment wires; on a
+  // taut span a run of equal segments is one multi-segment wire; on a sagging
+  // span every node is a wire end so the curve is followed. Nodes sit at
+  // chosen arc lengths along the catenary (closed form) or the straight chord.
+  function emitGraded(out, el, a, b, l, h, chord, slack, isSag, base, spanIdx, T, rampStart, feedSection){
+    let curve = null;
+    if(isSag){
+      curve = catenaryCurve(l, h, chord + slack);
+      if(!curve) out.warnings.push({ kind:'sag-failed', el:el.name, span:spanIdx+1 });
+    }
+    const S = curve ? chord + slack : chord;
+    if(!(S > 1e-9)) return { minZ:Math.min(a.z, b.z), maxSag:0, curved:false };
+    let lens, fineN = 0;
+    if(rampStart){
+      if(feedSection){
+        lens = S >= 4.5*T.fine
+          ? [T.fine, T.fine, T.fine, ...taperedLengths(S - 3*T.fine, T.fine*T.ratio, T.ratio, T.maxLen)]
+          : [S/3, S/3, S/3];
+        fineN = 3;
+      } else {
+        lens = taperedLengths(S, T.fine, T.ratio, T.maxLen);
+      }
+    } else {
+      lens = taperedLengths(S, T.maxLen, T.ratio, T.maxLen);
+    }
+    const ux = l > 1e-12 ? (b.x-a.x)/l : 0, uy = l > 1e-12 ? (b.y-a.y)/l : 0;
+    const posAt = arc => {
+      if(curve){ const x = curve.xAtS(arc); return { x:a.x+ux*x, y:a.y+uy*x, z:a.z+curve.zAt(x) }; }
+      const t = arc / S;
+      return { x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, z:a.z+(b.z-a.z)*t };
+    };
+    const nodes = [ { ...a } ];
+    let cum = 0;
+    lens.forEach((len,k)=>{ cum += len; nodes.push(k === lens.length-1 ? { ...b } : posAt(cum)); });
+    const group = [];
+    let k = 0;
+    if(fineN){ group.push({ from:nodes[0], to:nodes[3], segs:3, section:true }); k = 3; }
+    while(k < lens.length){
+      let j = k + 1;
+      if(!curve){
+        while(j < lens.length && Math.abs(lens[j]-lens[k]) <= 1e-9*Math.max(1, lens[k])) j++;
+      }
+      group.push({ from:nodes[k], to:nodes[j], segs:j-k });
+      k = j;
+    }
+    let minZ = Math.min(a.z, b.z);
+    group.forEach((g,idx)=>{
+      if(g.section) out.feedSecIndex = out.wires.length;
+      const label = group.length === 1 ? base : (g.section ? `${base} feed section` : `${base}.${idx+1}`);
+      out.wires.push({ label, from:g.from, to:g.to, el:el.id, segs:g.segs });
+      minZ = Math.min(minZ, g.to.z);
+      if(idx < group.length-1){
+        out.points.push({ ...g.to, label:`${el.name} · ${base===el.name ? '' : base.slice(el.name.length+1) + ' '}pt ${idx+1}`, kind:'mid', el:el.id });
+      }
+    });
+    return { minZ, maxSag:curve ? curve.maxSag : 0, curved:!!curve };
+  }
+
+  const EZNEC_MAX_SEGMENTS = 2000;
+
   // Core solver. Roots (wires with no attach) start at (ox,oy); everything else
   // follows from its attach point. Pure function of the scene.
   function solveRaw(sc, ox, oy){
@@ -749,28 +867,10 @@
         });
         const nSpans = sp.length-1;
         out.firstSub[el.id] = out.wires.length;
-        // Feed stub: a short vertical wire hanging below the source wire's start.
-        // Anything attached to that start joins at the stub's bottom (the junction),
-        // so the source can sit mid-stub, away from the multi-wire junction.
-        let stubLen = 0;
-        if(sc.stub && sc.stub.on && el.id === sc.feedEl){
-          if(att) out.warnings.push({ kind:'stub-attached', el:el.name });
-          else {
-            stubLen = Math.min(Math.max(0, +sc.stub.len || 0), start.z);
-            if(stubLen < 1e-6){ stubLen = 0; out.warnings.push({ kind:'stub-ground', el:el.name }); }
-          }
-        }
         anchors[el.id] = sp;
-        if(stubLen > 0){
-          const bottom = { x:start.x, y:start.y, z:start.z - stubLen };
-          out.points.push({ ...bottom, label:`${el.name} · feed junction`, kind:'support', el:el.id });
-          out.wires.push({ label:`${el.name} feed stub`, from:{ ...bottom }, to:{ ...sp[0] }, el:el.id, stub:true });
-          out.stubIndex = out.wires.length - 1;
-          out.feedPt = { x:start.x, y:start.y, z:start.z - stubLen/2 };
-          anchors[el.id] = [ bottom, ...sp.slice(1) ];
-          total += stubLen;
-          out.summary.push([`${el.name} feed stub`, stubLen, 'length']);
-        }
+        // Graded segments: anything that starts at the feed point is graded outward from it.
+        const T = taperParams(sc);
+        const startsAtFeed = el.id === sc.feedEl || !el.attach || (el.attach.el === sc.feedEl && el.attach.idx === 0);
         let wireLen = 0, slackSum = 0, minZ = Infinity;
         const sags = [];
         for(let i=0;i<=nSpans;i++){
@@ -781,6 +881,14 @@
           const l = Math.hypot(b.x-a.x, b.y-a.y), h = b.z-a.z, chord = Math.hypot(l,h);
           const slack = Math.max(0, +el.slack[i] || 0);
           const base = nSpans===1 ? el.name : `${el.name} span ${i+1}`;
+          if(T){
+            const g = emitGraded(out, el, a, b, l, h, chord, slack, slack > 1e-9 && l > 1e-9, base, i, T,
+                                 startsAtFeed && i===0, el.id === sc.feedEl && i===0);
+            minZ = Math.min(minZ, g.minZ);
+            if(g.curved){ wireLen += chord+slack; slackSum += slack; sags.push([i, g.maxSag]); }
+            else wireLen += chord;
+            continue;
+          }
           let curve = null;
           if(slack > 1e-9 && l > 1e-9){
             curve = catenaryPoints(l, h, chord+slack, 10);
@@ -826,14 +934,20 @@
         const reach = reach2 > 0 ? Math.sqrt(reach2) : 0;
         if(reach2 < 0) out.warnings.push({ kind:'fan-short', el:el.name });
         out.firstSub[el.id] = out.wires.length;
+        const T = taperParams(sc);
+        const fanAtFeed = !el.attach || (el.attach.el === sc.feedEl && el.attach.idx === 0);
+        const each = Math.hypot(reach, dz);
         for(let i=0;i<n;i++){
           const az = n===1 ? el.centerAz : el.centerAz - el.spread/2 + i*step;
           const o = az2xy(az, reach);
           const end = { x:P.x+o.x, y:P.y+o.y, z:el.zEnd };
+          if(T && each > 1e-9){
+            emitGraded(out, el, { ...P }, end, reach, dz, each, 0, false, `${el.name} R${i+1}`, 0, T, fanAtFeed, false);
+          } else {
+            out.wires.push({ label:`${el.name} R${i+1}`, from:{...P}, to:end, el:el.id });
+          }
           out.points.push({ ...end, label:`${el.name} · R${i+1} end`, kind:'end', el:el.id });
-          out.wires.push({ label:`${el.name} R${i+1}`, from:{...P}, to:end, el:el.id });
         }
-        const each = Math.hypot(reach, dz);
         info.length = n*each;
         total += info.length;
         out.summary.push([`${el.name} radials`, n, 'count']);
@@ -844,9 +958,15 @@
     out.wires.forEach(w=>{
       const e = sc.elements.find(x=>x.id===w.el);
       w.gauge = clampGauge(e && e.gauge != null ? e.gauge : sc.gauge);
-      w.segs = w.stub ? 3 : (e && e.segs != null ? e.segs : null);
+      if(w.segs === undefined) w.segs = (e && e.segs != null ? e.segs : null);
     });
     if(sc.elements.length > 1) out.summary.push(['Total wire', total, 'length']);
+    if(taperParams(sc)){
+      const nSeg = out.wires.reduce((n,w)=>n+(w.segs||1), 0);
+      out.summary.push(['Total segments', nSeg, 'count']);
+      // EZNEC Pro v7 accepts at most 2000 segments in a model.
+      if(nSeg > EZNEC_MAX_SEGMENTS) out.warnings.push({ kind:'segments-limit', n:nSeg });
+    }
     const fa = anchors[sc.feedEl];
     out.feed = out.feedPt || (fa ? { ...fa[0] } : { x:0, y:0, z:0 });
     return out;
@@ -866,14 +986,14 @@
   // ---------- Field access for the UI ----------
   function getVal(el, field, idx){
     if(field==='gauge') return el.gauge == null ? scene.gauge : el.gauge;
-    if(field==='stub.len') return scene.stub.len;
+    if(field.startsWith('taper.')) return scene.taper[field.slice(6)];
     if(field==='sup.d') return el.supports[idx].d;
     if(field==='sup.z') return el.supports[idx].z;
     if(field==='slack') return el.slack[idx];
     return el[field];
   }
   function setVal(el, field, idx, v){
-    if(field==='stub.len') scene.stub.len = v;
+    if(field.startsWith('taper.')) scene.taper[field.slice(6)] = v;
     else if(field==='sup.d') el.supports[idx].d = v;
     else if(field==='sup.z') el.supports[idx].z = v;
     else if(field==='slack') el.slack[idx] = v;
@@ -884,7 +1004,9 @@
     if(field==='n') return Math.min(36, Math.max(1, Math.round(v)));
     if(field==='gauge') return clampGauge(v);
     if(field==='segs') return Math.min(200, Math.max(1, Math.round(v)));
-    if(field==='stub.len') return Math.max(0.01, v);
+    if(field==='taper.fine') return Math.max(0.001, v);
+    if(field==='taper.ratio') return Math.min(3, Math.max(1.05, v));
+    if(field==='taper.div') return Math.min(200, Math.max(4, v));
     if(field==='len') return Math.max(0.01, v);
     if(field==='az' || field==='centerAz') return v;
     return Math.max(0, v); // sup.d, sup.z, slack, zEnd
@@ -894,7 +1016,9 @@
   function kindOf(field){
     if(field==='sup.d') return 'dist';
     if(field==='sup.z' || field==='zEnd') return 'height';
-    if(field==='stub.len') return 'stub';
+    if(field==='taper.fine') return 'fine';
+    if(field==='taper.ratio') return 'ratio';
+    if(field==='taper.div') return 'div';
     return field; // slack, len, az, spread, n
   }
   // Keeps support distances non-decreasing along the wire.
@@ -939,23 +1063,35 @@
   function segFieldHTML(el){
     const mode = el.segs == null ? 'auto' : (el.segs === 'M' ? 'M' : 'N');
     return `<div class="wgc-field"><label>Segments per exported wire</label><div class="wgc-ctl">
-      <select class="wgc-select" style="flex:1;" data-el="${el.id}" data-field="segMode">
+      <select class="wgc-select" style="flex:1;" data-el="${el.id}" data-field="segMode"${scene.taper.on ? ' disabled' : ''}>
         <option value="auto"${mode==='auto' ? ' selected' : ''}>Auto (EZNEC conservative)</option>
         <option value="M"${mode==='M' ? ' selected' : ''}>Minimum recommended</option>
         <option value="N"${mode==='N' ? ' selected' : ''}>Fixed count</option></select>
-      ${mode==='N' ? `<input type="number" data-el="${el.id}" data-field="segs" data-role="num" min="1" max="200" step="1" value="${el.segs}">` : ''}
-      </div></div>`;
+      ${mode==='N' ? `<input type="number" data-el="${el.id}" data-field="segs" data-role="num" min="1" max="200" step="1" value="${el.segs}"${scene.taper.on ? ' disabled' : ''}>` : ''}
+      </div>${scene.taper.on ? '<div class="wgc-hint">Set by the graded segments above.</div>' : ''}</div>`;
   }
 
-  function stubPanelHTML(){
-    const on = scene.stub.on;
+  function taperPanelHTML(){
+    const t = scene.taper;
     return `<div class="wgc-field" style="margin-top:4px;">
-      <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="stubOn"${on ? ' checked' : ''}> Feed stub (short wire that carries the source)</label>
-      ${on ? fieldHTML({ el:'_scene', field:'stub.len', label:'Stub length (hangs below the feed point)', value:scene.stub.len, kind:'stub' }) : ''}
-      <div class="wgc-hint">EZNEC wants the source on a wire with 3+ segments, not on an end segment where several wires meet (such as a counterpoise attached at the feed). The stub is a short vertical 3-segment wire: source at its center, counterpoise at its bottom.</div></div>`;
+      <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="taperOn"${t.on ? ' checked' : ''}> Graded segments (feed section + taper)</label>
+      ${t.on ? fieldHTML({ el:'_scene', field:'taper.fine', label:'Feed-section segment length (3 equal segments)', value:t.fine, kind:'fine' })
+            + fieldHTML({ el:'_scene', field:'taper.ratio', label:'Growth ratio per segment', value:t.ratio, kind:'ratio', suffix:'×' })
+            + fieldHTML({ el:'_scene', field:'taper.div', label:'Longest segment = wavelength ÷', value:t.div, kind:'div', suffix:'' })
+            + '<div class="wgc-hint" data-taper-info></div>' : ''}
+      <div class="wgc-hint">The radiator starts with three equal short segments, so EZNEC can take the source at the center of the middle one (straight, equal neighbours) away from the counterpoise junction. Segments then grow smoothly to the longest length, on the radiator and on every counterpoise radial leaving the feed. Uses the design frequency (FREQ, export panel).</div></div>`;
+  }
+
+  function updateTaperInfo(){
+    document.querySelectorAll('#wgcInputs [data-taper-info]').forEach(sp=>{
+      const T = taperParams(scene);
+      if(!T){ sp.textContent = ''; return; }
+      sp.textContent = `Longest segment ≈ ${fmt(T.maxLen)} ${uLabel()} at ${scene.freq} MHz; feed section ${fmt(3*T.fine)} ${uLabel()} long.`;
+    });
   }
 
   function updateGaugeInfo(){
+    updateTaperInfo();
     document.querySelectorAll('#wgcInputs [data-gauge-info]').forEach(sp=>{
       const t = findEl(sp.dataset.gaugeInfo);
       if(!t) return;
@@ -1039,7 +1175,7 @@
     let h = `<div class="wgc-panel-label">Wires &amp; Counterpoise</div>
       <div class="wgc-hint" style="margin-bottom:10px;">A wire runs along one azimuth through its supports (distance + height). Slack between two supports hangs as a catenary; zero slack is taut. Feed is the start of the source wire.</div>
       ${gaugeFieldHTML(scene, true)}
-      ${stubPanelHTML()}`;
+      ${taperPanelHTML()}`;
     scene.elements.forEach((el,i)=>{
       h += el.kind==='wire' ? wireCardHTML(el, i, wireCount) : fanCardHTML(el, i);
     });
@@ -1117,8 +1253,8 @@
   function loadPreset(key){
     const old = scene;
     scene = buildPreset(key);
-    // wire gauge and feed-stub settings are about the build, not the geometry: keep them across presets
-    if(old){ scene.gauge = old.gauge; scene.stub = old.stub; }
+    // gauge, segmentation and design frequency are about the build, not the geometry: keep them across presets
+    if(old){ scene.gauge = old.gauge; scene.taper = old.taper; scene.freq = old.freq; }
     sanitizeScene(scene);
     render();
   }
@@ -1167,7 +1303,7 @@
   // Groups of wire ends that sit at exactly the same point, as "W1E2 = W2E1"
   // comment lines. EZNEC's ASCII import is documented as coordinates only, so
   // these list the connections to confirm in the Wires window.
-  function junctionComments(wires){
+  function junctionComments(wires, crossOnly){
     const groups = {};
     const key = p => [p.x, p.y, p.z].map(v=>Math.round(v*1e6)/1e6).join(',');
     wires.forEach((w,i)=>{
@@ -1175,7 +1311,11 @@
         (groups[key(p)] = groups[key(p)] || []).push(`W${i+1}E${e}`);
       });
     });
-    return Object.values(groups).filter(g=>g.length>1).map(g=>'; ' + g.join(' = '));
+    // crossOnly: skip plain two-wire joins inside one wire/radial (every graded node would be listed)
+    const owner = id => wires[parseInt(id.slice(1), 10) - 1].el;
+    return Object.values(groups)
+      .filter(g=>g.length>1 && (!crossOnly || g.length>2 || owner(g[0]) !== owner(g[1])))
+      .map(g=>'; ' + g.join(' = '));
   }
 
   // EZNEC's "Import Wires From ASCII File" format (Other menu): an optional
@@ -1187,9 +1327,9 @@
   // you set. Sources, frequency and ground are not part of the format.
   // Where to put the source in EZNEC, as a comment line for the export.
   function sourceHint(model){
-    if(model.stubIndex != null){
-      const n = model.stubIndex + 1;
-      return `; Add the source in EZNEC's Sources window at W${n}C (the center of wire ${n}, the 3-segment feed stub).`;
+    if(model.feedSecIndex != null){
+      const n = model.feedSecIndex + 1;
+      return `; Add the source in EZNEC's Sources window at W${n}C (the center of wire ${n}, the 3-segment feed section).`;
     }
     return `; Add the source in EZNEC's Sources window: wire ${(model.firstSub[scene.feedEl] || 0) + 1}, end 1 (0% from E1) is the feed point.`;
   }
@@ -1216,14 +1356,14 @@
       unit==='ft' ? 'ft in' : 'm mm'
     ];
     const crowd = feedJunctionCount(model);
-    if(crowd >= 3 && model.stubIndex == null){
-      lines.splice(4, 0, `; NOTE: ${crowd} wire ends meet at the feed point. EZNEC wants a source on a wire of 3+ segments, not on an end segment shared by several wires - turn on "Feed stub" in the calculator.`);
+    if(crowd >= 3 && model.feedSecIndex == null){
+      lines.splice(4, 0, `; NOTE: ${crowd} wire ends meet at the feed point. EZNEC wants a source on a wire of 3+ segments, not on an end segment shared by several wires - turn on "Graded segments" in the calculator.`);
     }
     model.wires.forEach((w,i)=>{
       const nums = [w.from.x, w.from.y, w.from.z, w.to.x, w.to.y, w.to.z].map(eznecNum).join(' ');
       lines.push(`${nums} #${w.gauge}${w.segs == null ? '' : ' ' + w.segs} ; W${i+1} ${w.label}`);
     });
-    const junctions = junctionComments(model.wires);
+    const junctions = junctionComments(model.wires, true);
     if(junctions.length){
       lines.push('; Wire ends that share a point (confirm these are connected in the Wires window):');
       junctions.forEach(j=>lines.push(j));
@@ -1254,7 +1394,7 @@
     const lines = [];
     lines.push('Wire antenna model — generated by Wire Antenna Geometry Calculator');
     lines.push('*');
-    lines.push(mmanaNum(mmanaFreq));
+    lines.push(mmanaNum(scene.freq));
     lines.push('***Wires***');
     lines.push(String(wires.length));
     wires.forEach(w=>{
@@ -1318,8 +1458,7 @@
   function warningText(w){
     if(w.kind==='below-ground') return `${w.el} dips ${fmt(-w.z)} ${uLabel()} below ground at its lowest point. Raise a support or shorten the slack.`;
     if(w.kind==='fan-short') return `${w.el}: radial length is shorter than the height drop to its end, so the radials are drawn straight down. Increase the radial length.`;
-    if(w.kind==='stub-ground') return `Feed stub: the feed point of ${w.el} is at ground level, so there is no room for a stub below it. Raise the feed height or turn the stub off.`;
-    if(w.kind==='stub-attached') return `Feed stub is ignored because ${w.el} is attached to another wire.`;
+    if(w.kind==='segments-limit') return `This model has ${w.n} segments, over EZNEC's limit of 2000. Lower the wavelength divisor (longer segments), raise the growth ratio, shorten the wires, or turn the graded segments off.`;
     if(w.kind==='sag-failed') return `${w.el}, span ${w.span}: the slack is too large to solve a sag curve. Reduce the slack.`;
     return '';
   }
@@ -1543,6 +1682,8 @@
 
   function render(){
     sanitizeScene(scene);
+    const fq = document.getElementById('mmanaFreqInput');
+    if(parseFloat(fq.value) !== scene.freq) fq.value = scene.freq;
     renderInputs();
     renderOutputs();
     syncControls(null);
@@ -1581,8 +1722,8 @@
       render();
       return;
     }
-    if(inp.type==='checkbox' && inp.dataset.field==='stubOn'){
-      scene.stub.on = inp.checked;
+    if(inp.type==='checkbox' && inp.dataset.field==='taperOn'){
+      scene.taper.on = inp.checked;
       render();
       return;
     }
@@ -1672,7 +1813,7 @@
 
   document.getElementById('mmanaFreqInput').addEventListener('input', e=>{
     const v = parseFloat(e.target.value);
-    if(!isNaN(v)) mmanaFreq = v;
+    if(!isNaN(v) && v > 0) scene.freq = v;
     renderOutputs();
   });
 
@@ -1723,7 +1864,7 @@
   // than keeping a separate copy, so tests can never drift out of sync with
   // shipped behavior. Purely additive — no effect on the app itself.
   window.WGC = {
-    az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, findConnection, junctionComments, awgDiameterIn, awgRadiusM, feedJunctionCount,
+    az2xy, fmt, solveScene, solveCatenaryA, catenaryPoints, catenaryCurve, taperedLengths, findConnection, junctionComments, awgDiameterIn, awgRadiusM, feedJunctionCount,
     eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec,
     buildGenericExport, buildEznecExport, buildMmanaExport,
     getScene: () => scene,

@@ -1,6 +1,6 @@
 # Handoff: POTA Wire Antenna Geometry Calculator
 
-Context summary for a fresh session. Last updated 2026-10-18 (app **v2.1.0 · build 7**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
+Context summary for a fresh session. Last updated 2026-10-18 (app **v2.2.0 · build 8**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
 
 ## What this is
 
@@ -19,7 +19,7 @@ A single-file, vanilla-JS browser tool (`index.html`) that turns field-measurabl
 
 ## EZNEC reference
 
-`docs/EZNEC-notes.md` summarizes the relevant rules from the EZNEC Pro+ v7.0 User Manual (import format, where sources may go, transformers, virtual segments). The manual PDF itself is not in the repo; it is free at https://www.eznec.com/ez70manual.html (US letter: http://eznec.com/misc/EZNEC_Printable_Manual/7.0/EZW70_User_Manual.pdf). Key finding: a source on the end segment of a wire where several wires join (e.g. a counterpoise fan at the feed) is not allowed/accurate; the manual's fix is a short stub wire with >=3 segments carrying the source.
+`docs/EZNEC-notes.md` summarizes the relevant rules from the EZNEC Pro+ v7.0 User Manual (import format, where sources may go, transformers, virtual segments). The manual PDF itself is not in the repo; it is free at https://www.eznec.com/ez70manual.html (US letter: http://eznec.com/misc/EZNEC_Printable_Manual/7.0/EZW70_User_Manual.pdf). Key finding: a source on the end segment of a wire where several wires join (e.g. a counterpoise fan at the feed) is not allowed/accurate; the manual's fix is a source on a wire of >=3 segments, away from the end segment (the app's graded feed section).
 
 ## Repo layout
 
@@ -45,7 +45,7 @@ Everything is one screen with a **scene** of elements:
 - Old tabs survive as **presets** (Straight Sloper, Sagging Sloper, Inverted-V, Sagging Inverted-V, Inverted-L, Sloper + Counterpoise) that replace the scene.
 - Every length/angle has a **number box + slider**. Stored values are exact (typed values aren't snapped); slider ranges are unit-native and widen to a round-number ceiling when a value exceeds 90% of the default max (recomputed only at panel rebuild, never mid-drag). Unit toggle converts exactly.
 - **Wire gauge**: `scene.gauge` default + optional `element.gauge` override (AWG, sliders #10–#24, whole sizes); `solveScene` stamps each sub-wire with `gauge`; EZNEC writes `#n`, MMANA writes radius from `awgRadiusM(n)`. Loss/insulation are not importable into EZNEC so not offered. Segments field not exposed yet.
-- **Feed stub** (`scene.stub {on,len}`): a vertical 3-segment wire below the source wire's start, exported as that group's first wire; counterpoise/attached wires join at its bottom; source belongs at `W#C`. Fixes EZNEC's "source connected to multiple wires" complaint (manual: only one wire may join the end segment holding an insertion object). Gauge and stub persist across preset loads. **Segments** per element (`segs`: null/'M'/integer): EZNEC 8th field, MMANA SEG.
+- **Graded segments** (`scene.taper {on,fine,ratio,div}`, `scene.freq`; default ON): the source wire starts with a 3-segment feed section (source at EZNEC `W#C`), segment lengths grow by `ratio` to wavelength/div, every wire/radial starting at the feed is graded from the same fine length; catenary nodes placed by arc length via `catenaryCurve()`; spans end exactly on supports. Export: feed section = 1 wire with 3 segs, ramp segments = 1-seg wires, equal runs on taut spans = one multi-seg wire. Metrics strip shows Total segments; warning above EZNEC's 2000-segment limit. With grading off the v2.0 behavior and the per-element **segments** control (`segs`: null/'M'/integer) apply. Gauge, grading and frequency persist across preset loads. (An earlier vertical 'feed stub' was replaced by this; avoid the word 'stub', it means a tuning element.)
 - **Exports** (Generic / EZNEC / MMANA) read one merged, ordered sub-wire list. MMANA: X/Y/Z always meters; `R` = wire radius m (#10 AWG); `SEG = -1` bare integer; source `w{k}b` on the chosen source wire's first sub-wire; fixed Segmentation/ground lines copied from MMANA-GAL samples; Frequency field feeds line 3. EZNEC: the real **"Import Wires From ASCII File"** format from the EZNEC manual (Other menu): units line `ft in`/`m mm`, then `x1 y1 z1 x2 y2 z2 #10 ; label` per wire, no segments field (EZNEC auto-segments "conservative"), no sources/connections in the format; coincident ends are listed in `; W1E1 = W2E1` comments (`junctionComments()`). Whether EZNEC auto-connects coincident ends on import is UNVERIFIED — the user is testing this. (The v1.x report-replica export was not an import format; `findConnection()` remains but is unused by exports.)
 - **Views**: SVG 3D view (orthographic, drag/wheel/Top-Side-Reset; ground drawn as four lines on Z=0, drop lines, N/E labels), side profile (projected onto the first wire's azimuth), plan view; all with round-number scale labels.
 - **Warnings**: sag below ground, radial shorter than its height drop, sag solver failure.
@@ -55,7 +55,7 @@ Format sources for the exports: three real `.maa` samples in `C:\MMANA-GALBasic3
 
 ## Testing
 
-104 tests (51 unit + 53 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
+120 tests (59 unit + 61 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
 
 ## Tooling gotchas learned the hard way
 

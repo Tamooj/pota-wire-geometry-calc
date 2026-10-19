@@ -63,6 +63,21 @@
         assert.isTrue(/^v\d+\.\d+\.\d+ · build \d+$/.test(text), `expected a "vX.Y.Z · build N" string, got "${text}"`);
       });
 
+      suite('Graded segments are on by default');
+      const taperBox = () => doc.querySelector('input[type="checkbox"][data-field="taperOn"]');
+      const setTaper = on => { const b = taperBox(); if (b.checked !== on) { b.checked = on; b.dispatchEvent(new Event('change', { bubbles: true })); } };
+      test('a fresh page has graded segments on, with a feed section as wire 1', () => {
+        assert.isTrue(taperBox().checked);
+        const m = win.WGC.solveScene(win.WGC.getScene());
+        assert.equal(m.feedSecIndex, 0);
+        assert.isAbove(m.wires.length, 3);
+      });
+      test('(the legacy suites below run with grading off so wire counts stay simple)', () => {
+        setTaper(false);
+        assert.isFalse(taperBox().checked);
+        assert.equal(win.WGC.solveScene(win.WGC.getScene()).wires.length, 1);
+      });
+
       suite('Presets');
       test('each preset loads and produces a non-empty export', () => {
         ['sloper', 'sagsloper', 'invv', 'saginvv', 'invl', 'sloperfan'].forEach(k => {
@@ -325,49 +340,15 @@
         type(id, 'az', undefined, 90);
       });
 
-      suite('Feed stub and segments (through the real UI)');
+      suite('Segments per wire (through the real UI, grading off)');
       const NL = String.fromCharCode(10);
       const ezLines = () => { setFormat('eznec'); const t = exportText().split(NL); setFormat('generic'); return t; };
       const ezWires = () => ezLines().filter(l => l.trim() && !l.trim().startsWith(';')).slice(1);
-      const stubBox = () => doc.querySelector('input[type="checkbox"][data-field="stubOn"]');
-      test('without the stub, a counterpoise at the feed produces a note about the multi-wire junction', () => {
+      test('without grading, a counterpoise at the feed produces a note about the multi-wire junction', () => {
         preset('sloperfan');
         const note = ezLines().find(l => l.includes('NOTE:'));
         assert.isTrue(!!note, 'expected a NOTE comment');
-        assert.isTrue(note.includes('Feed stub'));
-      });
-      test('ticking the stub adds a vertical 3-segment wire as wire 1 and points the source hint at its center', () => {
-        const box = stubBox();
-        box.checked = true;
-        box.dispatchEvent(new Event('change', { bubbles: true }));
-        const lines = ezLines();
-        assert.isTrue(lines.some(l => l.includes('at W1C')), 'expected the W1C source hint');
-        assert.isFalse(lines.some(l => l.includes('NOTE:')), 'the junction note should go away');
-        const wires = ezWires();
-        assert.equal(wires.length, 1 + 1 + 4, 'stub + radiator + 4 radials');
-        const f = wires[0].split(';')[0].trim().split(' ');
-        assert.equal(f[0], f[3], 'stub is vertical (same x)');
-        assert.equal(f[7], '3', 'stub has 3 segments');
-      });
-      test('the stub length is editable and its control appears only while the stub is on', () => {
-        assert.isTrue(!!doc.querySelector('[data-el="_scene"][data-field="stub.len"][data-role="num"]'));
-        type('_scene', 'stub.len', undefined, 2);
-        const f = ezWires()[0].split(';')[0].trim().split(' ');
-        assert.close(parseFloat(f[5]) - parseFloat(f[2]), 2, 1e-6);
-        const box = stubBox();
-        box.checked = false;
-        box.dispatchEvent(new Event('change', { bubbles: true }));
-        assert.isFalse(!!doc.querySelector('[data-field="stub.len"]'));
-      });
-      test('stub settings survive loading another preset', () => {
-        const box = stubBox();
-        box.checked = true;
-        box.dispatchEvent(new Event('change', { bubbles: true }));
-        preset('sloper');
-        assert.isTrue(stubBox().checked);
-        const box2 = stubBox();
-        box2.checked = false;
-        box2.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.isTrue(note.includes('Graded segments'));
       });
       test('the Segments selector: Auto writes no field, Fixed writes the count, Minimum writes M', () => {
         preset('sloper');
@@ -400,18 +381,87 @@
         assert.isTrue(line.endsWith(String.fromCharCode(9) + '9'), 'expected SEG 9, got: ' + line);
         preset('sloper');
       });
-      test('the unit toggle converts the stub length exactly', () => {
-        const box = stubBox();
-        box.checked = true;
-        box.dispatchEvent(new Event('change', { bubbles: true }));
-        type('_scene', 'stub.len', undefined, 1);
+
+      suite('Graded segments (through the real UI)');
+      test('turning grading on adds a 3-segment feed section as wire 1 and points the source hint at its center', () => {
+        preset('sloperfan');
+        setTaper(true);
+        const lines = ezLines();
+        assert.isTrue(lines.some(l => l.includes('at W1C')), 'expected the W1C source hint');
+        assert.isFalse(lines.some(l => l.includes('NOTE:')), 'the junction note should go away');
+        const wires = ezWires();
+        assert.isAbove(wires.length, 20);
+        const f = wires[0].split(';')[0].trim().split(' ');
+        assert.equal(f[7], '3', 'feed section has 3 segments');
+        assert.isTrue(wires.every(w => w.split(';')[0].trim().split(' ').length === 8), 'every graded wire states its segment count');
+      });
+      test('the radials leaving the feed are graded too, and the feed-point junction is listed', () => {
+        const text = ezLines().join(NL);
+        assert.isTrue(/Fan 1 R1\.1/.test(text), 'expected graded radial wires');
+        assert.isTrue(/^; W1E1 = /m.test(text), 'expected the feed junction in the comments');
+        assert.isFalse(/^; W2E2 = W3E1$/m.test(text), 'plain joins inside one wire should not be listed');
+      });
+      test('the metrics strip shows the total segment count', () => {
+        const txt = doc.getElementById('wgcSummary').textContent;
+        assert.isTrue(txt.includes('Total segments'));
+      });
+      test('the feed-section length is editable and sets the length of wire 1', () => {
+        type('_scene', 'taper.fine', undefined, 0.2);
+        const f = ezWires()[0].split(';')[0].trim().split(' ');
+        const len = Math.hypot(f[3] - f[0], f[4] - f[1], f[5] - f[2]);
+        assert.close(len, 0.6, 1e-3);
+        type('_scene', 'taper.fine', undefined, 0.1);
+      });
+      test('the Segments selector is disabled while grading is on, and works again when it is off', () => {
+        const id = wireIds()[0];
+        assert.equal(doc.querySelector('select[data-el="' + id + '"][data-field="segMode"]').disabled, true);
+        setTaper(false);
+        assert.equal(doc.querySelector('select[data-el="' + id + '"][data-field="segMode"]').disabled, false);
+        setTaper(true);
+      });
+      test('changing the FREQ box changes the longest segment and the segment count', () => {
+        const count = () => win.WGC.solveScene(win.WGC.getScene()).summary.find(r => r[0] === 'Total segments')[1];
+        const before = count();
+        const fq = doc.getElementById('mmanaFreqInput');
+        fq.value = '28';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        assert.isAbove(count(), before);
+        assert.isTrue(doc.querySelector('[data-taper-info]').textContent.includes('28 MHz'));
+        fq.value = '14';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        assert.equal(count(), before);
+      });
+      test('a model over 2000 segments shows a warning, and it clears again', () => {
+        const fq = doc.getElementById('mmanaFreqInput');
+        fq.value = '3000';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        const w = doc.querySelector('#wgcWarnings .wgc-warn');
+        assert.isTrue(!!w && w.textContent.includes('2000'), 'expected the segment-limit warning');
+        fq.value = '14';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        assert.isFalse(!!doc.querySelector('#wgcWarnings .wgc-warn'));
+      });
+      test('the MMANA export writes the segment count of each graded wire as its SEG value, with the source on wire 1', () => {
+        setFormat('mmana');
+        const lines = exportText().split(NL);
+        setFormat('generic');
+        assert.isTrue(lines[5].endsWith(String.fromCharCode(9) + '3'), 'wire 1 is the 3-segment feed section: ' + lines[5]);
+        assert.isTrue(lines.includes('w1b,' + String.fromCharCode(9) + '0.0,' + String.fromCharCode(9) + '1.0'));
+      });
+      test('the unit toggle converts the feed-section length exactly', () => {
+        type('_scene', 'taper.fine', undefined, 0.1);
         setUnit('m');
-        assert.close(win.WGC.getScene().stub.len, 0.3048, 1e-9);
+        assert.close(win.WGC.getScene().taper.fine, 0.03048, 1e-9);
         setUnit('ft');
-        assert.close(win.WGC.getScene().stub.len, 1, 1e-9);
-        const b2 = stubBox();
-        b2.checked = false;
-        b2.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.close(win.WGC.getScene().taper.fine, 0.1, 1e-9);
+      });
+      test('grading and frequency settings survive loading another preset', () => {
+        type('_scene', 'taper.ratio', undefined, 1.8);
+        preset('sloper');
+        assert.isTrue(taperBox().checked);
+        assert.equal(win.WGC.getScene().taper.ratio, 1.8);
+        type('_scene', 'taper.ratio', undefined, 1.5);
+        setTaper(false);
       });
 
       suite('Warnings');

@@ -22,11 +22,14 @@ All insertion objects (sources, loads, transmission lines, transformers, network
 
 ## Counterpoise, low radials and end-fed wires (pp. 85-87, 93-94)
 - A counterpoise is just more wires to the solver: it carries current, radiates and couples like any other wire, so it changes pattern and feedpoint impedance. The manual's end-fed discussion explains why it is needed at all: a source has two terminals with equal and opposite current, so a source on the end of a lone wire sees almost an open circuit; the return path (a counterpoise, ground wire or the radio chassis) is part of the real antenna.
-- Radials very near ground: ordinary segmentation is fine at heights of at least 0.001 wavelength (and at least the vertical wire's diameter); 0.0001 to 0.001 wavelength needs segment length tapering; the minimum is 0.0001 wavelength. For wires lying on or just above the ground use the **High Accuracy Real** ground type. The same section describes the source-on-a-3-segment-stub recipe.
+- Radials very near ground: ordinary segmentation is fine at heights of at least 0.001 wavelength (and at least the vertical wire's diameter); 0.0001 to 0.001 wavelength needs segment length tapering; the minimum is 0.0001 wavelength. For wires lying on or just above the ground use the **High Accuracy Real** ground type. The same section describes putting the source on a short 3-segment wire (the app's feed section).
 
-## What this means for the app (done in v2.1.0 / build 7)
-1. **Feed stub** option: a short vertical 3-segment wire below the feed carrying the source (`W#C`), with the counterpoise attached at its bottom. Also the place for a 9:1 transformer's second port.
-2. **Segments** field per wire/fan (auto / minimum `M` / fixed).
-3. Export comments naming where the source goes, and a `NOTE:` when 3+ wires meet at an unstubbed feed.
+## Model limits
+- EZNEC 7 accepts at most **2000 segments** in a model (stated by the user from the program; not looked up in the manual). The app counts segments for graded models and warns above 2000.
 
-Still open: export comments with the transformer recipe (Rel Z 50 and 450, source and port 1 on one virtual segment, port 2 on the stub), and a source-segment check against the rules above.
+## What this means for the app (done in v2.2.0 / build 8)
+1. **Graded segments**: the source wire starts with a 3-segment feed section (source at `W#C`), segments grow smoothly to wavelength/div, and the counterpoise radials are graded from the feed too. This replaced a short-lived separate vertical stub wire.
+2. **Segments** field per wire/fan (auto / minimum `M` / fixed) used when grading is off.
+3. Export comments naming where the source goes, and a `NOTE:` when 3+ wires meet at the feed with grading off.
+
+Still open: export comments with the transformer recipe (Rel Z 50 and 450, source and port 1 on one virtual segment, port 2 on the feed section), and a source-segment check against the rules above.

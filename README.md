@@ -66,7 +66,7 @@ https://tamooj.github.io/pota-wire-geometry-calc/
   ground outline at Z=0, plus side-profile and plan views, all with round-number
   scale labels in the current unit.
 - **Wire gauge**: a default AWG size plus a per-wire (or per-counterpoise) override, sliders from #10 to #24; both exports use it.
-- **Feed stub**: optional short vertical wire at the feed point that carries the source (EZNEC does not accept a source on the end segment of several joined wires, such as a counterpoise at the feed). Segments per wire can be left to EZNEC, set to its minimum, or fixed.
+- **Graded segments** (on by default): the radiator starts with a 3-segment feed section for the source and its segments grow smoothly to about a twentieth of a wavelength, and the counterpoise radials are graded outward from the feed the same way. EZNEC does not accept a source on the end segment of several joined wires (such as a counterpoise at the feed), and abrupt changes in segment length hurt accuracy. The metrics strip shows the total segment count and warns above EZNEC's limit of 2000. With grading off, segments per wire can be left to EZNEC, set to its minimum, or fixed.
 - **Warnings** when a sag dips below ground or a radial is too short for its
   height drop.
 - **Three export formats**, toggled in the export panel:
