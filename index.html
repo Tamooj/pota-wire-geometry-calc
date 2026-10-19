@@ -389,6 +389,22 @@
     color:var(--khaki-dim) !important;
     font-size:10px !important;
   }
+  .wgc-flash{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--green-signal);
+  }
+  .wgc-flash.err{color:var(--red-warn);}
+  details.wgc-adv{margin-top:6px; border-top:1px solid var(--border); padding-top:6px;}
+  details.wgc-adv summary{
+    cursor:pointer;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--amber-dim);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin-bottom:8px;
+  }
   .wgc-add-row{display:flex; gap:8px; margin-bottom:6px;}
   .wgc-svg-title-row{display:flex; justify-content:space-between; align-items:center;}
   .wgc-svg-box svg.wgc-3d{cursor:grab; touch-action:none; user-select:none;}
@@ -405,9 +421,15 @@
       <div class="wgc-title">Wire Antenna <span>Geometry</span> Calculator</div>
       <div class="wgc-sub">EZNEC / MMANA coordinate generator — field-deployable wire models</div>
     </div>
-    <div class="wgc-unit-toggle" id="unitToggle">
-      <button data-unit="ft" class="active">FEET</button>
-      <button data-unit="m">METERS</button>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <span class="wgc-flash" id="wgcFlash" role="status"></span>
+      <button class="wgc-btn" id="wgcSaveBtn" title="Download this model as a small JSON file">Save model</button>
+      <button class="wgc-btn" id="wgcLoadBtn" title="Open a model saved earlier">Load model</button>
+      <input type="file" id="wgcLoadFile" accept=".json,application/json" hidden>
+      <div class="wgc-unit-toggle" id="unitToggle">
+        <button data-unit="ft" class="active">FEET</button>
+        <button data-unit="m">METERS</button>
+      </div>
     </div>
   </div>
 
@@ -485,8 +507,8 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v2.2.1';
-  const APP_BUILD = 10;
+  const APP_VERSION = 'v2.3.0';
+  const APP_BUILD = 11;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
@@ -1097,16 +1119,20 @@
       </div>${scene.taper.on ? '<div class="wgc-hint">Set by the graded segments above.</div>' : ''}</div>`;
   }
 
+  let advOpen = false; // keeps the Advanced section open across panel rebuilds
   function taperPanelHTML(){
     const t = scene.taper;
+    const adv = t.on ? `<details class="wgc-adv" data-adv${advOpen ? ' open' : ''}><summary>Advanced segmentation</summary>
+        <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="fineOwn"${t.fine != null ? ' checked' : ''}> set the feed-section segment length by hand (otherwise it follows the frequency)</label>
+        ${fieldHTML({ el:'_scene', field:'taper.fine', label:'Feed-section segment length (3 equal segments)', value:t.fine != null ? t.fine : taperParams(scene).fine, kind:'fine', readonly:t.fine == null })}
+        ${fieldHTML({ el:'_scene', field:'taper.ratio', label:'Growth ratio per segment', value:t.ratio, kind:'ratio', suffix:'×' })}
+        ${fieldHTML({ el:'_scene', field:'taper.div', label:'Longest segment = wavelength ÷', value:t.div, kind:'div', suffix:'' })}
+      </details>` : '';
     return `<div class="wgc-field" style="margin-top:4px;">
       <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="taperOn"${t.on ? ' checked' : ''}> Graded segments (feed section + taper)</label>
-      ${t.on ? `<label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="fineOwn"${t.fine != null ? ' checked' : ''}> set the feed-section segment length by hand (otherwise it follows the frequency)</label>`
-            + fieldHTML({ el:'_scene', field:'taper.fine', label:'Feed-section segment length (3 equal segments)', value:t.fine != null ? t.fine : taperParams(scene).fine, kind:'fine', readonly:t.fine == null })
-            + fieldHTML({ el:'_scene', field:'taper.ratio', label:'Growth ratio per segment', value:t.ratio, kind:'ratio', suffix:'×' })
-            + fieldHTML({ el:'_scene', field:'taper.div', label:'Longest segment = wavelength ÷', value:t.div, kind:'div', suffix:'' })
-            + '<div class="wgc-hint" data-taper-info></div>' : ''}
-      <div class="wgc-hint">The radiator starts with three equal short segments, so EZNEC can take the source at the center of the middle one (straight, equal neighbours) away from the counterpoise junction. Segments then grow smoothly to the longest length, on the radiator and on every counterpoise radial leaving the feed. Uses the design frequency (FREQ, export panel).</div></div>`;
+      ${t.on ? '<div class="wgc-hint" data-taper-info></div>' : ''}
+      <div class="wgc-hint">The radiator starts with three short equal segments (the source goes at the center of the middle one), then segments grow smoothly to wavelength/20, on the radiator and on every counterpoise radial leaving the feed. Lengths follow the design frequency (FREQ, export panel).</div>
+      ${adv}</div>`;
   }
 
   function updateTaperInfo(){
@@ -1709,6 +1735,7 @@
     renderSide(model);
     renderPlan(model);
     render3D(model);
+    scheduleSave();
   }
 
   function render(){
@@ -1720,6 +1747,119 @@
     syncControls(null);
   }
 
+  // ---------- Saving: browser auto-save + JSON file ----------
+  const STORAGE_KEY = 'wgc.model.v1';
+  // The test pages load this file with ?nosave=1 so they never read or overwrite a real saved model.
+  const PERSIST = !/[?&]nosave=1/.test(location.search);
+
+  function modelSnapshot(){
+    return { app:'wire-geometry-calc', format:1, version:APP_VERSION, unit, exportFormat, scene };
+  }
+
+  // Checks anything parsed from storage or a file before it is allowed near the app state.
+  function validateModel(obj){
+    try {
+      if(!obj || typeof obj !== 'object') throw 'not a model';
+      const sc = obj.scene;
+      if(!sc || !Array.isArray(sc.elements) || !sc.elements.length) throw 'no wires in the file';
+      const num = v => typeof v === 'number' && isFinite(v);
+      sc.elements.forEach(el=>{
+        if(!el || typeof el.id !== 'string' || typeof el.name !== 'string') throw 'bad element';
+        if(el.kind === 'wire'){
+          if(!Array.isArray(el.supports) || el.supports.length < 2 || !el.supports.every(p=>p && num(p.d) && num(p.z))) throw 'bad supports';
+          if(!num(el.az)) throw 'bad azimuth';
+          el.slack = (Array.isArray(el.slack) ? el.slack : []).map(v=>num(v) ? v : 0);
+        } else if(el.kind === 'fan'){
+          ['n','len','zEnd','centerAz','spread'].forEach(k=>{ if(!num(el[k])) throw 'bad fan field ' + k; });
+        } else throw 'unknown element type';
+        if(el.attach && !(typeof el.attach.el === 'string' && num(el.attach.idx))) el.attach = null;
+      });
+      return { ok:true, scene:sc, unit: obj.unit === 'm' ? 'm' : 'ft',
+               exportFormat: ['generic','eznec','mmana'].includes(obj.exportFormat) ? obj.exportFormat : null };
+    } catch(e){
+      return { ok:false, error:String(e) };
+    }
+  }
+
+  function applyModel(v){
+    scene = v.scene;
+    // keep id/name counters ahead of anything already in the model
+    const idNum = scene.elements.map(e=>parseInt(String(e.id).replace(/\D/g,''),10)||0);
+    scene.seq = Math.max(+scene.seq || 0, ...idNum);
+    scene.wireN = Math.max(+scene.wireN || 0, scene.elements.filter(e=>e.kind==='wire').length);
+    scene.fanN = Math.max(+scene.fanN || 0, scene.elements.filter(e=>e.kind==='fan').length);
+    unit = v.unit;
+    root.querySelectorAll('#unitToggle button').forEach(b=>b.classList.toggle('active', b.dataset.unit === unit));
+    if(v.exportFormat){
+      exportFormat = v.exportFormat;
+      root.querySelectorAll('#exportFormatToggle button').forEach(b=>b.classList.toggle('active', b.dataset.format === exportFormat));
+    }
+    sanitizeScene(scene);
+    render();
+  }
+
+  let saveTimer = null;
+  function saveNow(force){
+    if(!PERSIST && !force) return false;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(modelSnapshot())); return true; }
+    catch(e){ return false; }
+  }
+  function scheduleSave(){
+    if(!PERSIST) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>saveNow(), 300);
+  }
+  function loadSaved(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return false;
+      const v = validateModel(JSON.parse(raw));
+      if(!v.ok) return false;
+      applyModel(v);
+      return true;
+    } catch(e){ return false; }
+  }
+
+  let flashTimer = null;
+  function flash(msg, isErr){
+    const el = document.getElementById('wgcFlash');
+    el.textContent = msg;
+    el.classList.toggle('err', !!isErr);
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(()=>{ el.textContent = ''; }, 5000);
+  }
+
+  function saveFile(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const name = `wire-model-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+    const blob = new Blob([JSON.stringify(modelSnapshot(), null, 1)], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    flash('Saved ' + name);
+  }
+
+  document.getElementById('wgcSaveBtn').addEventListener('click', saveFile);
+  document.getElementById('wgcLoadBtn').addEventListener('click', ()=>document.getElementById('wgcLoadFile').click());
+  document.getElementById('wgcLoadFile').addEventListener('change', e=>{
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      let v;
+      try { v = validateModel(JSON.parse(reader.result)); } catch(err){ v = { ok:false, error:'not valid JSON' }; }
+      if(v.ok){ applyModel(v); flash('Loaded ' + f.name); }
+      else flash('Could not load ' + f.name + ': ' + v.error, true);
+    };
+    reader.onerror = ()=>flash('Could not read ' + f.name, true);
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+
   // ---------- Events ----------
   const inputsEl = document.getElementById('wgcInputs');
 
@@ -1728,6 +1868,10 @@
     const idx = inp.dataset.idx===undefined ? undefined : +inp.dataset.idx;
     return { el, field:inp.dataset.field, idx };
   }
+
+  inputsEl.addEventListener('toggle', e=>{
+    if(e.target && e.target.matches && e.target.matches('details[data-adv]')) advOpen = e.target.open;
+  }, true);
 
   inputsEl.addEventListener('input', e=>{
     const inp = e.target;
@@ -1905,6 +2049,7 @@
     eznecNum, mmanaNum, niceCeil, niceTicks, sliderSpec,
     buildGenericExport, buildEznecExport, buildMmanaExport,
     getScene: () => scene,
+    modelSnapshot, validateModel, applyModel, saveNow, loadSaved, storageKey: STORAGE_KEY,
     getUnit: () => unit,
     loadPreset
   };
@@ -1912,8 +2057,10 @@
   bind3D();
   document.getElementById('wgcVersion').textContent = `${APP_VERSION} · build ${APP_BUILD}`;
 
-  scene = buildPreset('sloper');
-  render();
+  if(!(PERSIST && loadSaved())){
+    scene = buildPreset('sloper');
+    render();
+  }
 })();
 </script>
 </body>

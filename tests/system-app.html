@@ -24,7 +24,7 @@
   <script>
     // Cache-bust the iframe load — a static src="../index.html" can otherwise
     // serve a stale cached copy across test iterations during development.
-    document.getElementById('app').src = '../index.html?_t=' + Date.now();
+    document.getElementById('app').src = '../index.html?nosave=1&_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const win = document.getElementById('app').contentWindow;
       const doc = win.document;
@@ -665,6 +665,106 @@
         preset('sloper');
         assert.isTrue(/\d+ ft/.test(doc.getElementById('svgTop').textContent), 'expected a ring label like "20 ft" in the plan view');
         assert.isTrue(doc.getElementById('svgSide').textContent.includes('ft'));
+      });
+
+      suite('Save, load and auto-save');
+      const WG = win.WGC;
+      const sleep = ms => new Promise(r => win.setTimeout(r, ms));
+      test('Advanced segmentation starts collapsed, with the summary line visible', () => {
+        setTaper(true);
+        const d = doc.querySelector('details[data-adv]');
+        assert.isTrue(!!d);
+        assert.isFalse(d.open);
+        assert.isTrue(doc.querySelector('[data-taper-info]').textContent.includes('MHz'));
+        setTaper(false);
+      });
+      test('a snapshot round-trips the whole model, including unit, gauge, grading and frequency', () => {
+        preset('saginvv');
+        setUnit('m');
+        type('_scene', 'gauge', undefined, 14);
+        const fq = doc.getElementById('mmanaFreqInput');
+        fq.value = '7.1';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        const before = JSON.stringify(WG.modelSnapshot());
+        preset('sloper');
+        setUnit('ft');
+        assert.notEqual(JSON.stringify(WG.modelSnapshot()), before);
+        const v = WG.validateModel(JSON.parse(before));
+        assert.isTrue(v.ok);
+        WG.applyModel(v);
+        assert.equal(JSON.stringify(WG.modelSnapshot()), before);
+        assert.equal(WG.getUnit(), 'm');
+        assert.equal(WG.getScene().gauge, 14);
+        assert.equal(WG.getScene().freq, 7.1);
+        assert.equal(doc.getElementById('mmanaFreqInput').value, '7.1');
+        assert.isTrue(doc.querySelector('#unitToggle [data-unit="m"]').classList.contains('active'));
+        setUnit('ft');
+        setFormat('generic');
+        preset('sloper');
+      });
+      test('a loaded model is fully editable (new wires get fresh ids, controls are live)', () => {
+        preset('sloperfan');
+        const json = JSON.stringify(WG.modelSnapshot());
+        preset('sloper');
+        WG.applyModel(WG.validateModel(JSON.parse(json)));
+        assert.equal(doc.querySelectorAll('.wgc-card').length, 2);
+        doc.querySelector('[data-action="add-wire"]').click();
+        const ids = WG.getScene().elements.map(e => e.id);
+        assert.equal(new Set(ids).size, ids.length, 'ids must stay unique: ' + ids.join(','));
+        preset('sloper');
+      });
+      test('invalid or hostile data is rejected, never applied', () => {
+        assert.isFalse(WG.validateModel(null).ok);
+        assert.isFalse(WG.validateModel({}).ok);
+        assert.isFalse(WG.validateModel({ scene: { elements: [] } }).ok);
+        assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'wire', az: 'x', supports: [{ d: 0, z: 1 }, { d: 1, z: 1 }] }] } }).ok);
+        assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'wire', az: 1, supports: [{ d: 0, z: 1 }] }] } }).ok);
+        assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'script' }] } }).ok);
+        assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'fan', n: 'four', len: 1, zEnd: 0, centerAz: 0, spread: 1 }] } }).ok);
+      });
+      test('Load model reads a chosen file, applies it, and says so; a bad file leaves the model alone', async () => {
+        preset('sloperfan');
+        const good = JSON.stringify(WG.modelSnapshot());
+        preset('sloper');
+        const input = doc.getElementById('wgcLoadFile');
+        const feed = text => { const dt = new win.DataTransfer(); dt.items.add(new win.File([text], 'm.json', { type: 'application/json' })); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true })); };
+        feed(good);
+        await sleep(200);
+        assert.equal(doc.querySelectorAll('.wgc-card.fan').length, 1, 'the fan from the file should be present');
+        assert.isTrue(doc.getElementById('wgcFlash').textContent.startsWith('Loaded'));
+        const keep = JSON.stringify(WG.modelSnapshot());
+        feed('this is not json');
+        await sleep(200);
+        assert.equal(JSON.stringify(WG.modelSnapshot()), keep, 'a bad file must not change the model');
+        assert.isTrue(doc.getElementById('wgcFlash').classList.contains('err'));
+        preset('sloper');
+      });
+      test('browser auto-save writes the model and loadSaved restores it', () => {
+        try { win.localStorage.removeItem(WG.storageKey); } catch (e) {}
+        preset('saginvv');
+        const snap = JSON.stringify(WG.modelSnapshot());
+        assert.isTrue(WG.saveNow(true), 'saving to local storage failed');
+        preset('sloper');
+        assert.notEqual(JSON.stringify(WG.modelSnapshot()), snap);
+        assert.isTrue(WG.loadSaved());
+        assert.equal(JSON.stringify(WG.modelSnapshot()), snap);
+        win.localStorage.removeItem(WG.storageKey);
+        assert.isFalse(WG.loadSaved(), 'with nothing saved, loading reports false');
+        preset('sloper');
+      });
+      test('a corrupt saved value is ignored (the app falls back to its defaults)', () => {
+        win.localStorage.setItem(WG.storageKey, '{ this is not json');
+        assert.isFalse(WG.loadSaved());
+        win.localStorage.setItem(WG.storageKey, JSON.stringify({ scene: { elements: [{ kind: 'wire' }] } }));
+        assert.isFalse(WG.loadSaved());
+        win.localStorage.removeItem(WG.storageKey);
+      });
+      test('with ?nosave=1 (the test pages) editing never writes to local storage', async () => {
+        win.localStorage.removeItem(WG.storageKey);
+        preset('sloperfan');
+        await sleep(450);
+        assert.equal(win.localStorage.getItem(WG.storageKey), null);
+        preset('sloper');
       });
 
       suite('Copy button (clipboard fallback regression guard)');

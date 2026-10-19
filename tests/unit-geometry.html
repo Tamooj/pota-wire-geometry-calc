@@ -19,7 +19,7 @@
   <script>
     // Cache-bust the iframe load — a static src="../index.html" can otherwise
     // serve a stale cached copy across test iterations during development.
-    document.getElementById('app').src = '../index.html?_t=' + Date.now();
+    document.getElementById('app').src = '../index.html?nosave=1&_t=' + Date.now();
     document.getElementById('app').addEventListener('load', () => {
       const WGC = document.getElementById('app').contentWindow.WGC;
 
