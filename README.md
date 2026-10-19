@@ -78,6 +78,37 @@ https://tamooj.github.io/pota-wire-geometry-calc/
     field and a selector for which wire carries the source
 - Runs entirely client-side; nothing is sent anywhere
 
+## Importing into EZNEC 7 and MMANA
+
+**EZNEC 7**
+
+1. Set **FREQ** (top right of the tool) to the frequency you will run in EZNEC.
+   The wire import carries no frequency, and the segment lengths the tool
+   generates depend on it (EZNEC's Segmentation Check wants each segment between
+   wavelength/1000 and wavelength/20). The tool's metrics strip shows the
+   **EZNEC-valid band** of the current model, and the comment lines at the top of
+   the export repeat it.
+2. In the export panel select **EZNEC**, click **Copy**, and paste the text into
+   a plain text file somewhere easy to reach from the desktop.
+3. In EZNEC 7 choose **Other > Import Wires From ASCII File** (the menu named in
+   the EZNEC manual), pick **Replace Existing Wires**, then select the file you
+   saved. Your antenna should appear in the Wires window.
+4. Set EZNEC to the proper frequency, and set the **Source** location to your
+   feedpoint: typically **wire 1, 50% from E1** (`W1C`, the center of the
+   3-segment feed section). The comment lines at the top of the export say
+   exactly where.
+5. Check the connections in the Wires window (the Conn. columns) and run
+   EZNEC's Segmentation Check and Average Gain test, as you would for any model.
+
+**MMANA-GAL**
+
+1. In the export panel select **MMANA** and click **Copy**.
+2. Paste the text into a file and save it with a **.maa** extension.
+3. In MMANA open it the normal way with **File > Open**.
+
+Use **Save model** in the tool to keep your design as a small JSON file you can
+load again later (the tool also remembers your last model in the browser).
+
 ## Coordinate convention
 
 - **X = East, Y = North, Z = Up** (standard right-handed, ground-referenced -
@@ -94,15 +125,17 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 - No ground-system loss, soil conductivity, or near-field ground modeling -
   output is geometry only, for import into a NEC-2 engine that handles the EM
   solve. Ground is drawn as the flat plane Z = 0.
-- The EZNEC export follows EZNEC's documented wire-import format; the MMANA
-  export is reverse-engineered from sample files. Neither has been verified
-  against the real applications yet. The EZNEC import carries coordinates only
-  (no sources, frequency, ground or wire connections) - ends that meet are
+- The EZNEC export follows EZNEC's documented wire-import format and has been
+  imported into EZNEC 7 by the author; the MMANA export is reverse-engineered
+  from sample files and has had much less testing. The EZNEC import carries
+  coordinates only (no sources, frequency or ground) - ends that meet are
   listed in comments so you can check the connections in EZNEC's Wires window.
   See [docs/DESIGN.md §3.5](docs/DESIGN.md#35-export-formats).
-- Counterpoise radials are straight (no sag). The EZNEC export leaves segmentation to EZNEC; MMANA uses its tapering mode.
-- Not yet: dipoles (feed along a wire), sloped ground, saved scenarios, native
-  file download - see the roadmap in [docs/DESIGN.md](docs/DESIGN.md#5-known-limitations--roadmap).
+- Counterpoise radials are straight (no sag). Graded segment lengths are valid
+  for one band at a time (about 25% wide): export again at each frequency.
+- Not yet: dipoles (feed along a wire), sloped ground, a named scenario
+  library, a native NEC (`.nec`) export - see the roadmap in
+  [docs/DESIGN.md](docs/DESIGN.md#5-known-limitations--roadmap).
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full design rationale - including
 the catenary derivation and the complete roadmap.
