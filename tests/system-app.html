@@ -401,6 +401,13 @@
         assert.isTrue(/^; W1E1 = /m.test(text), 'expected the feed junction in the comments');
         assert.isFalse(/^; W2E2 = W3E1$/m.test(text), 'plain joins inside one wire should not be listed');
       });
+      test('the export names the frequency band its segment lengths are valid for, and the metrics strip shows it', () => {
+        const lines = ezLines();
+        const c = lines.find(l => l.includes("conservative limits (wavelength/1000 to wavelength/20)"));
+        assert.isTrue(!!c, 'expected the band comment');
+        assert.isTrue(/for [0-9.]+ to [0-9.]+ MHz/.test(c));
+        assert.isTrue(doc.getElementById('wgcSummary').textContent.includes('EZNEC-valid band'));
+      });
       test('the metrics strip shows the total segment count', () => {
         const txt = doc.getElementById('wgcSummary').textContent;
         assert.isTrue(txt.includes('Total segments'));

@@ -1,6 +1,6 @@
 # Handoff: POTA Wire Antenna Geometry Calculator
 
-Context summary for a fresh session. Last updated 2026-10-18 (app **v2.3.0 · build 11**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
+Context summary for a fresh session. Last updated 2026-10-18 (app **v2.3.1 · build 12**). Read this first, then `README.md` and `docs/DESIGN.md` (the design record, with derivations, rationale and roadmap).
 
 ## What this is
 
@@ -55,7 +55,7 @@ Format sources for the exports: three real `.maa` samples in `C:\MMANA-GALBasic3
 
 ## Testing
 
-137 tests (67 unit + 70 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
+140 tests (69 unit + 71 system) at last run, all passing. Serve the repo (`python -m http.server 8420`) and open `tests/unit-geometry.html` / `tests/system-app.html`. Results render on the page and in `window.__TEST_SUMMARY__ = {total, passed, failed}`. Both pages set the iframe `src` from JS with a `?_t=Date.now()` cache-buster. Copy-button tests mock the clipboard (real availability is environment-dependent).
 
 ## Tooling gotchas learned the hard way
 

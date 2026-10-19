@@ -389,6 +389,15 @@
     color:var(--khaki-dim) !important;
     font-size:10px !important;
   }
+  .wgc-freq{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--amber);
+    font-weight:600;
+  }
   .wgc-flash{
     font-family:'IBM Plex Mono', monospace;
     font-size:10px;
@@ -423,6 +432,11 @@
     </div>
     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
       <span class="wgc-flash" id="wgcFlash" role="status"></span>
+      <label class="wgc-freq" title="Design frequency. Sets the segment lengths of the graded segments (wavelength/1000 to wavelength/20), so set it to the frequency EZNEC will use. Also the frequency line of the MMANA export.">
+        FREQ
+        <input type="number" id="mmanaFreqInput" value="14.0" min="0.1" max="3000" step="0.01" style="width:64px;">
+        MHz
+      </label>
       <button class="wgc-btn" id="wgcSaveBtn" title="Download this model as a small JSON file">Save model</button>
       <button class="wgc-btn" id="wgcLoadBtn" title="Open a model saved earlier">Load model</button>
       <input type="file" id="wgcLoadFile" accept=".json,application/json" hidden>
@@ -480,11 +494,6 @@
               SOURCE
               <select id="wgcSourceSelect" class="wgc-select" style="width:auto;"></select>
             </label>
-            <label style="display:flex; align-items:center; gap:4px; font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--khaki-dim);" title="Design frequency: sets the longest segment (wavelength / divisor) of the graded segments, and is the frequency line of the MMANA export.">
-              FREQ
-              <input type="number" id="mmanaFreqInput" value="14.0" min="0.1" max="3000" step="0.01" style="width:60px;">
-              MHz
-            </label>
             <div class="wgc-unit-toggle" id="exportFormatToggle">
               <button data-format="generic" class="active">GENERIC</button>
               <button data-format="eznec">EZNEC</button>
@@ -507,8 +516,8 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v2.3.0';
-  const APP_BUILD = 11;
+  const APP_VERSION = 'v2.3.1';
+  const APP_BUILD = 13;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
@@ -1008,13 +1017,24 @@
     }
     // Segments shorter than about wavelength/1000 are flagged by EZNEC's Segmentation Check.
     const minSegLen = lambdaUnit(sc) / 1000;
-    let shortest = Infinity;
+    let shortest = Infinity, longest = 0;
     out.wires.forEach(w=>{
       if(typeof w.segs === 'number' && w.segs > 0){
-        shortest = Math.min(shortest, Math.hypot(w.to.x-w.from.x, w.to.y-w.from.y, w.to.z-w.from.z) / w.segs);
+        const seg = Math.hypot(w.to.x-w.from.x, w.to.y-w.from.y, w.to.z-w.from.z) / w.segs;
+        shortest = Math.min(shortest, seg);
+        longest = Math.max(longest, seg);
       }
     });
     if(shortest < minSegLen*0.999) out.warnings.push({ kind:'segments-short', shortest, min:minSegLen });
+    // The band of frequencies for which EZNEC's conservative segment limits (wavelength/1000 minimum,
+    // wavelength/20 maximum) hold for the segment lengths in THIS model. The import file carries no
+    // frequency, so this is what to match EZNEC's frequency against.
+    if(taperParams(sc) && isFinite(shortest) && longest > 0){
+      const lamF = 299.792458 * (unit==='ft' ? 3.28084 : 1);   // wavelength in the current unit times MHz
+      out.band = { lo: lamF/(1000*shortest), hi: lamF/(20*longest) };
+      const r = v => String(Math.round(v*10)/10);
+      out.summary.push(['EZNEC-valid band', out.band.lo <= out.band.hi ? `${r(out.band.lo)}–${r(out.band.hi)} MHz` : 'none (spread too wide)', 'raw']);
+    }
     const fa = anchors[sc.feedEl];
     out.feed = out.feedPt || (fa ? { ...fa[0] } : { x:0, y:0, z:0 });
     return out;
@@ -1131,7 +1151,7 @@
     return `<div class="wgc-field" style="margin-top:4px;">
       <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="taperOn"${t.on ? ' checked' : ''}> Graded segments (feed section + taper)</label>
       ${t.on ? '<div class="wgc-hint" data-taper-info></div>' : ''}
-      <div class="wgc-hint">The radiator starts with three short equal segments (the source goes at the center of the middle one), then segments grow smoothly to wavelength/20, on the radiator and on every counterpoise radial leaving the feed. Lengths follow the design frequency (FREQ, export panel).</div>
+      <div class="wgc-hint">The radiator starts with three short equal segments (the source goes at the center of the middle one), then segments grow smoothly to wavelength/20, on the radiator and on every counterpoise radial leaving the feed. Lengths follow the design frequency (FREQ, top right): set it to the frequency EZNEC will use.</div>
       ${adv}</div>`;
   }
 
@@ -1411,6 +1431,12 @@
       sourceHint(model),
       unit==='ft' ? 'ft in' : 'm mm'
     ];
+    if(model.band){
+      const r = v => String(Math.round(v*10)/10);
+      lines.splice(4, 0, model.band.lo <= model.band.hi
+        ? `; Segment lengths in this file meet EZNEC's conservative limits (wavelength/1000 to wavelength/20) for ${r(model.band.lo)} to ${r(model.band.hi)} MHz (calculator design frequency ${scene.freq} MHz). Set EZNEC's frequency inside that range, or re-export at your frequency.`
+        : `; WARNING: the segment lengths in this file are too widely spread to satisfy EZNEC's conservative limits at any single frequency. Raise the longest-segment divisor or the feed-section length.`);
+    }
     const crowd = feedJunctionCount(model);
     if(crowd >= 3 && model.feedSecIndex == null){
       lines.splice(4, 0, `; NOTE: ${crowd} wire ends meet at the feed point. EZNEC wants a source on a wire of 3+ segments, not on an end segment shared by several wires - turn on "Graded segments" in the calculator.`);

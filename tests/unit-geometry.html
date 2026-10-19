@@ -500,6 +500,24 @@
           });
         });
       });
+      test('the EZNEC-valid band brackets the design frequency and matches the limits for the actual segments', () => {
+        const sc = gscene([wire('W', 90, [{ d: 0, z: 4 }, { d: 35, z: 28 }]), fan('F', { el: 'W', idx: 0 }, { n: 2, len: 12, zEnd: 1.5 })], { fine: null });
+        sc.freq = 14;
+        const m = WGC.solveScene(sc);
+        assert.isTrue(!!m.band);
+        assert.isTrue(m.band.lo <= 14 && 14 <= m.band.hi, 'band ' + m.band.lo + '-' + m.band.hi);
+        let mn = Infinity, mx = 0;
+        m.wires.forEach(w => { const s = wlen(w) / w.segs; mn = Math.min(mn, s); mx = Math.max(mx, s); });
+        assert.close(m.band.lo, 983.57 / (1000 * mn), 0.01);
+        assert.close(m.band.hi, 983.57 / (20 * mx), 0.01);
+        assert.isTrue(m.summary.some(r => r[0] === 'EZNEC-valid band'));
+      });
+      test('exporting at the wrong frequency is detectable: a 14 MHz model is outside the band EZNEC needs at 7 MHz', () => {
+        const sc = gscene([wire('W', 90, [{ d: 0, z: 4 }, { d: 35, z: 28 }]), fan('F', { el: 'W', idx: 0 }, { n: 2, len: 12, zEnd: 1.5 })], { fine: null });
+        sc.freq = 14;
+        const m = WGC.solveScene(sc);
+        assert.isTrue(7 < m.band.lo, 'band starts at ' + m.band.lo + ' MHz, so EZNEC at 7 MHz would flag short segments');
+      });
       test('the cross-only junction list skips plain joins inside one wire and keeps the feed-point junction', () => {
         const m = WGC.solveScene(gscene([wire('W', 90, [{ d: 0, z: 4 }, { d: 35, z: 28 }]), fan('F', { el: 'W', idx: 0 }, { n: 3, spread: 360 })]));
         const all = WGC.junctionComments(m.wires);
