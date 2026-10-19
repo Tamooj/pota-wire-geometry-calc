@@ -42,3 +42,13 @@ The manual does not print numeric thresholds, so these come from warnings in EZN
 3. Export comments naming where the source goes, and a `NOTE:` when 3+ wires meet at the feed with grading off.
 
 Still open: export comments with the transformer recipe (Rel Z 50 and 450, source and port 1 on one virtual segment, port 2 on the feed section), and a source-segment check against the rules above.
+
+## Connections between imported wires (pp. 64, 92)
+- **EZNEC connects wires automatically** whenever an end of each has the same coordinates (within about 1/1000 of a segment length), and adjusts the coordinates to make them identical. A wire end with Z within that tolerance of 0 is connected to ground when a ground is used. So the coincident ends in our export connect on import; the `; W1E1 = ...` comment lines are only a checklist.
+- Wires connect **only at ends**, and must not cross or overlap (the Geometry Check refuses to calculate otherwise). EZNEC+ no longer allows wires to intersect at segment junctions.
+
+## Obstacles, masts and buildings (pp. 63-64, 94-95, 119-134)
+- **Conductive objects can be modeled as wires.** EZNEC does not distinguish "the antenna" from other conductors; towers, masts, gutters, fences, vehicles and structures are all part of one coupled system. A metal mast or tower is a vertical wire (accurate for diameters up to about 0.02 wavelength).
+- **Flat surfaces (a metal wall or roof, a car body) are wire grids** with a mesh of about 0.1 wavelength or finer. Segment budget is roughly `220 x area in square wavelengths`; the manual's tutorial builds a 20 x 40 ft metal roof (about 330 segments at 30 MHz). Grids get expensive at higher frequencies. EZNEC Pro (not Standard) has automatic wire grid creation.
+- **Non-conductors cannot be modeled.** NEC has no dielectric materials, so trees, wooden or fiberglass masts, and walls as insulating material are not represented. The wire-insulation feature is only for thin insulation on a wire, not for simulating a dielectric object.
+- **Ground is flat.** It starts at Z = 0, is infinite in extent and homogeneous in depth, with at most two media (a radial or linear boundary) and the second medium may sit at the same level or **one step lower**. A real slope can only be approximated by that single step. NEC-2 cannot model buried wires.
