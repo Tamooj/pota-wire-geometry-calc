@@ -17,6 +17,10 @@ A single-file, vanilla-JS browser tool (`index.html`) that turns field-measurabl
 - Don't credit or reference the q-primer project in docs. Concise answers and direct, recommended choices over option surveys.
 - Keep `docs/DESIGN.md` in sync with behavior changes and keep the tests green. Verify UI changes in the browser preview before reporting done.
 
+## EZNEC reference
+
+`docs/EZNEC-notes.md` summarizes the relevant rules from the EZNEC Pro+ v7.0 User Manual (import format, where sources may go, transformers, virtual segments). The manual PDF itself is not in the repo; it is free at https://www.eznec.com/ez70manual.html (US letter: http://eznec.com/misc/EZNEC_Printable_Manual/7.0/EZW70_User_Manual.pdf). Key finding: a source on the end segment of a wire where several wires join (e.g. a counterpoise fan at the feed) is not allowed/accurate; the manual's fix is a short stub wire with >=3 segments carrying the source.
+
 ## Repo layout
 
 ```
