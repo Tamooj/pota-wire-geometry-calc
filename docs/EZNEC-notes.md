@@ -24,8 +24,16 @@ All insertion objects (sources, loads, transmission lines, transformers, network
 - A counterpoise is just more wires to the solver: it carries current, radiates and couples like any other wire, so it changes pattern and feedpoint impedance. The manual's end-fed discussion explains why it is needed at all: a source has two terminals with equal and opposite current, so a source on the end of a lone wire sees almost an open circuit; the return path (a counterpoise, ground wire or the radio chassis) is part of the real antenna.
 - Radials very near ground: ordinary segmentation is fine at heights of at least 0.001 wavelength (and at least the vertical wire's diameter); 0.0001 to 0.001 wavelength needs segment length tapering; the minimum is 0.0001 wavelength. For wires lying on or just above the ground use the **High Accuracy Real** ground type. The same section describes putting the source on a short 3-segment wire (the app's feed section).
 
+## Segmentation Check limits (measured from the running program, EZNEC Segmentation Check, conservative guidelines)
+The manual does not print numeric thresholds, so these come from warnings in EZNEC itself (wavelength = 983.57 / f(MHz) ft):
+- **Minimum segment length = wavelength / 1000.** Seen: "recommended min. = 0.1405 ft" at 7 MHz (983.57/7/1000) and 0.136 ft at 7.2 MHz.
+- **Maximum segment length = wavelength / 20.** Seen: "conservative max. = 3.513 ft" at 14 MHz (983.57/14/20). A 4.511 ft radial segment was flagged.
+- Both scale with frequency, so a model graded for one band can violate them on another; the app derives its segment lengths from the design frequency (FREQ).
+- The check measures the **straight length of each segment**: three feed-section segments across a sag curve are a chord, a little shorter than the arc (0.09755 ft instead of 0.1 ft was seen on a 24 ft rise), so keep some margin.
+- Segmentation Check also covers segment length/diameter ratio and insertion-object placement; their numbers are not known here. From the manual: a source should be on a wire of at least about 0.02 wavelength with 3+ segments, neighbours equal in length and diameter, and the Average Gain test should be run to validate source placement.
+
 ## Model limits
-- EZNEC 7 accepts at most **2000 segments** in a model (stated by the user from the program; not looked up in the manual). The app counts segments for graded models and warns above 2000.
+- Segment count: the manual says **EZNEC+ allows 2000 segments** and **EZNEC Pro/2+ and Pro/4+ allow 45,000** (Standard and Demo are lower). The app currently warns above 2000 (the user's figure for their installed program).
 
 ## What this means for the app (done in v2.2.0 / build 8)
 1. **Graded segments**: the source wire starts with a 3-segment feed section (source at `W#C`), segments grow smoothly to wavelength/div, and the counterpoise radials are graded from the feed too. This replaced a short-lived separate vertical stub wire.

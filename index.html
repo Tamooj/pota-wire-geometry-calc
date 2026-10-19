@@ -485,8 +485,8 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v2.2.0';
-  const APP_BUILD = 8;
+  const APP_VERSION = 'v2.2.1';
+  const APP_BUILD = 10;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
@@ -587,7 +587,7 @@
   //   fan:  { id, kind:'fan', name, attach:{el,idx}, n, len, zEnd, centerAz, spread }
   // attach: null = origin; {el,idx} = the idx-th support of an earlier wire.
   // All lengths are in the current display unit.
-  function newScene(){ return { elements:[], feedEl:null, gauge:10, freq:14, taper:{ on:true, fine:(unit==='ft' ? 0.1 : 0.03), ratio:1.5, div:20 }, seq:0, wireN:0, fanN:0 }; }
+  function newScene(){ return { elements:[], feedEl:null, gauge:10, freq:14, taper:{ on:true, fine:null, ratio:1.5, div:20 }, seq:0, wireN:0, fanN:0 }; }
 
   // Converts a feet default to the current unit; meters are rounded to 5 cm
   // so a metric preset reads 1.2 m, not 1.2192 m.
@@ -644,7 +644,7 @@
   // Trims float noise (3.9999999999999996) left by a round trip of unit conversions.
   function r9(v){ return Math.round(v*1e9)/1e9; }
   function convertScene(sc, factor){
-    if(sc.taper) sc.taper.fine = r9(sc.taper.fine*factor);
+    if(sc.taper && sc.taper.fine != null) sc.taper.fine = r9(sc.taper.fine*factor);
     sc.elements.forEach(el=>{
       if(el.kind==='wire'){
         el.supports.forEach(s=>{ s.d = r9(s.d*factor); s.z = r9(s.z*factor); });
@@ -684,7 +684,7 @@
       seen[el.id] = { kind:el.kind, n:el.supports ? el.supports.length : 0 };
     });
     sc.gauge = clampGauge(sc.gauge);
-    if(!sc.taper) sc.taper = { on:true, fine:(unit==='ft' ? 0.1 : 0.03), ratio:1.5, div:20 };
+    if(!sc.taper) sc.taper = { on:true, fine:null, ratio:1.5, div:20 };
     if(!(sc.freq > 0)) sc.freq = 14;
     sc.elements.forEach(e=>{ if(!(e.segs==null || e.segs==='M' || (typeof e.segs==='number' && e.segs>=1))) e.segs = null; });
     sc.elements.forEach(e=>{ if(e.gauge != null) e.gauge = clampGauge(e.gauge); });
@@ -749,9 +749,13 @@
   }
 
   // Segment lengths (in order from the start) that begin at startLen, grow by
-  // `ratio` per segment up to maxLen, then continue as equal segments of about
-  // maxLen, summing exactly to S. A leftover shorter than half a segment is
-  // absorbed into the previous segment instead of making an abrupt short one.
+  // `ratio` per segment up to maxLen, then continue as equal segments, summing
+  // exactly to S. NO segment is ever longer than maxLen (EZNEC's Segmentation
+  // Check flags longer ones: at 14 MHz it reported 4.511 ft against a
+  // conservative maximum of 3.513 ft = wavelength/20). The leftover after the
+  // ramp is split into ceil(R/maxLen) equal pieces; if those would be much
+  // shorter than the segment before them, that segment and the leftover are
+  // re-split together instead of leaving an abrupt short segment.
   function taperedLengths(S, startLen, ratio, maxLen){
     const out = [];
     if(!(S > 1e-12)) return out;
@@ -761,10 +765,15 @@
     }
     const R = S - sum;
     if(R > 1e-12){
-      if(R < 0.5*l && out.length) out[out.length-1] += R;
-      else {
-        const n = Math.max(1, Math.round(R/l));
-        for(let i=0;i<n;i++) out.push(R/n);
+      const k = Math.max(1, Math.ceil(R/maxLen - 1e-9));
+      const prev = out.length ? out[out.length-1] : null;
+      if(prev !== null && R/k < 0.5*prev){
+        out.pop();
+        const tail = prev + R;
+        const k2 = Math.max(1, Math.ceil(tail/maxLen - 1e-9));
+        for(let i=0;i<k2;i++) out.push(tail/k2);
+      } else {
+        for(let i=0;i<k;i++) out.push(R/k);
       }
     }
     return out;
@@ -772,12 +781,20 @@
 
   // Graded-segment parameters in the current unit, or null if grading is off.
   // The longest segment is wavelength / div at the design frequency.
+  function lambdaUnit(sc){
+    return 299.792458 / Math.max(0.001, sc.freq || 14) * (unit==='ft' ? 3.28084 : 1);
+  }
+  // `fine` null = automatic: 1.25 x wavelength/1000, so it follows the design frequency
+  // (EZNEC's Segmentation Check recommends a minimum segment length that scales with
+  // wavelength: about 0.136 ft at 7.2 MHz, which is wavelength/1000).
   function taperParams(sc){
     const t = sc.taper;
     if(!t || !t.on) return null;
-    const lambda = 299.792458 / Math.max(0.001, sc.freq || 14) * (unit==='ft' ? 3.28084 : 1);
-    const maxLen = lambda / Math.max(2, t.div || 20);
-    return { fine:Math.min(Math.max(1e-6, +t.fine || 0), maxLen), ratio:Math.max(1.05, +t.ratio || 1.5), maxLen };
+    const lambda = lambdaUnit(sc);
+    const maxLen = 0.995 * lambda / Math.max(2, t.div || 20);  // 0.5% under the limit so rounding can't tip a segment over
+    const minSeg = lambda / 1000;
+    const fine = t.fine == null ? 1.25*minSeg : (+t.fine || 0);
+    return { fine:Math.min(Math.max(1e-6, fine), maxLen), ratio:Math.max(1.05, +t.ratio || 1.5), maxLen, minSeg, auto:t.fine == null };
   }
 
   // Emits one span (or one radial) as graded wires. The feed span starts with a
@@ -967,6 +984,15 @@
       // EZNEC Pro v7 accepts at most 2000 segments in a model.
       if(nSeg > EZNEC_MAX_SEGMENTS) out.warnings.push({ kind:'segments-limit', n:nSeg });
     }
+    // Segments shorter than about wavelength/1000 are flagged by EZNEC's Segmentation Check.
+    const minSegLen = lambdaUnit(sc) / 1000;
+    let shortest = Infinity;
+    out.wires.forEach(w=>{
+      if(typeof w.segs === 'number' && w.segs > 0){
+        shortest = Math.min(shortest, Math.hypot(w.to.x-w.from.x, w.to.y-w.from.y, w.to.z-w.from.z) / w.segs);
+      }
+    });
+    if(shortest < minSegLen*0.999) out.warnings.push({ kind:'segments-short', shortest, min:minSegLen });
     const fa = anchors[sc.feedEl];
     out.feed = out.feedPt || (fa ? { ...fa[0] } : { x:0, y:0, z:0 });
     return out;
@@ -1075,7 +1101,8 @@
     const t = scene.taper;
     return `<div class="wgc-field" style="margin-top:4px;">
       <label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="taperOn"${t.on ? ' checked' : ''}> Graded segments (feed section + taper)</label>
-      ${t.on ? fieldHTML({ el:'_scene', field:'taper.fine', label:'Feed-section segment length (3 equal segments)', value:t.fine, kind:'fine' })
+      ${t.on ? `<label class="wgc-check"><input type="checkbox" data-el="_scene" data-field="fineOwn"${t.fine != null ? ' checked' : ''}> set the feed-section segment length by hand (otherwise it follows the frequency)</label>`
+            + fieldHTML({ el:'_scene', field:'taper.fine', label:'Feed-section segment length (3 equal segments)', value:t.fine != null ? t.fine : taperParams(scene).fine, kind:'fine', readonly:t.fine == null })
             + fieldHTML({ el:'_scene', field:'taper.ratio', label:'Growth ratio per segment', value:t.ratio, kind:'ratio', suffix:'×' })
             + fieldHTML({ el:'_scene', field:'taper.div', label:'Longest segment = wavelength ÷', value:t.div, kind:'div', suffix:'' })
             + '<div class="wgc-hint" data-taper-info></div>' : ''}
@@ -1086,8 +1113,11 @@
     document.querySelectorAll('#wgcInputs [data-taper-info]').forEach(sp=>{
       const T = taperParams(scene);
       if(!T){ sp.textContent = ''; return; }
-      sp.textContent = `Longest segment ≈ ${fmt(T.maxLen)} ${uLabel()} at ${scene.freq} MHz; feed section ${fmt(3*T.fine)} ${uLabel()} long.`;
+      sp.textContent = `At ${scene.freq} MHz: longest segment ≈ ${fmt(T.maxLen)} ${uLabel()}, EZNEC's recommended minimum ≈ ${Math.round(T.minSeg*1000)/1000} ${uLabel()} (wavelength/1000), feed section ${Math.round(3*T.fine*1000)/1000} ${uLabel()} long.`;
     });
+    const T2 = taperParams(scene);
+    const box = document.querySelector('#wgcInputs [data-el="_scene"][data-field="taper.fine"][data-role="num"]');
+    if(T2 && box && scene.taper.fine == null) box.value = fmtIn(T2.fine);
   }
 
   function updateGaugeInfo(){
@@ -1458,7 +1488,8 @@
   function warningText(w){
     if(w.kind==='below-ground') return `${w.el} dips ${fmt(-w.z)} ${uLabel()} below ground at its lowest point. Raise a support or shorten the slack.`;
     if(w.kind==='fan-short') return `${w.el}: radial length is shorter than the height drop to its end, so the radials are drawn straight down. Increase the radial length.`;
-    if(w.kind==='segments-limit') return `This model has ${w.n} segments, over EZNEC's limit of 2000. Lower the wavelength divisor (longer segments), raise the growth ratio, shorten the wires, or turn the graded segments off.`;
+    if(w.kind==='segments-limit') return `This model has ${w.n} segments, over the 2000 that EZNEC+ allows (the manual says EZNEC Pro/2+ and Pro/4+ allow 45,000). Lower the wavelength divisor (longer segments), raise the growth ratio, shorten the wires, or turn the graded segments off.`;
+    if(w.kind==='segments-short') return `Some segments are ${Math.round(w.shortest*1000)/1000} ${uLabel()} long, shorter than the ${Math.round(w.min*1000)/1000} ${uLabel()} (about 1/1000 wavelength at ${scene.freq} MHz) that EZNEC's Segmentation Check recommends as a minimum. Lengthen the feed-section segments, or use a lower frequency.`;
     if(w.kind==='sag-failed') return `${w.el}, span ${w.span}: the slack is too large to solve a sag curve. Reduce the slack.`;
     return '';
   }
@@ -1719,6 +1750,12 @@
     if(inp.type==='checkbox' && inp.dataset.field==='gaugeOwn'){
       const t = findEl(inp.dataset.el);
       if(t) t.gauge = inp.checked ? scene.gauge : null;
+      render();
+      return;
+    }
+    if(inp.type==='checkbox' && inp.dataset.field==='fineOwn'){
+      const T = taperParams(scene);
+      scene.taper.fine = inp.checked && T ? Math.round(T.fine*1000)/1000 : null;
       render();
       return;
     }

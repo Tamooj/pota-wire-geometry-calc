@@ -405,12 +405,45 @@
         const txt = doc.getElementById('wgcSummary').textContent;
         assert.isTrue(txt.includes('Total segments'));
       });
-      test('the feed-section length is editable and sets the length of wire 1', () => {
+      test('the feed-section length follows the frequency until set by hand, then is editable', () => {
+        const feedLen = () => { const f = ezWires()[0].split(';')[0].trim().split(' '); return Math.hypot(f[3] - f[0], f[4] - f[1], f[5] - f[2]); };
+        const fq = doc.getElementById('mmanaFreqInput');
+        const at14 = feedLen();
+        fq.value = '7.2';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        assert.isTrue(feedLen() > at14 * 1.9, 'the feed section grows as the frequency drops');
+        assert.equal(ctl('_scene', 'taper.fine', undefined, 'num').disabled, true, 'read-only while automatic');
+        const own = doc.querySelector('input[type="checkbox"][data-field="fineOwn"]');
+        own.checked = true;
+        own.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(ctl('_scene', 'taper.fine', undefined, 'num').disabled, false);
+        fq.value = '14';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
         type('_scene', 'taper.fine', undefined, 0.2);
         const f = ezWires()[0].split(';')[0].trim().split(' ');
         const len = Math.hypot(f[3] - f[0], f[4] - f[1], f[5] - f[2]);
         assert.close(len, 0.6, 1e-3);
+        const own2 = doc.querySelector('input[type="checkbox"][data-field="fineOwn"]');
+        own2.checked = false;
+        own2.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.equal(win.WGC.getScene().taper.fine, null);
+      });
+      test('a hand-set feed segment shorter than wavelength/1000 shows the short-segment warning', () => {
+        const own = doc.querySelector('input[type="checkbox"][data-field="fineOwn"]');
+        own.checked = true;
+        own.dispatchEvent(new Event('change', { bubbles: true }));
+        const fq = doc.getElementById('mmanaFreqInput');
+        fq.value = '7.2';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
         type('_scene', 'taper.fine', undefined, 0.1);
+        const w = doc.querySelector('#wgcWarnings .wgc-warn');
+        assert.isTrue(!!w && w.textContent.includes('Segmentation Check'), 'expected the short-segment warning');
+        const own2 = doc.querySelector('input[type="checkbox"][data-field="fineOwn"]');
+        own2.checked = false;
+        own2.dispatchEvent(new Event('change', { bubbles: true }));
+        fq.value = '14';
+        fq.dispatchEvent(new Event('input', { bubbles: true }));
+        assert.isFalse(!!doc.querySelector('#wgcWarnings .wgc-warn'));
       });
       test('the Segments selector is disabled while grading is on, and works again when it is off', () => {
         const id = wireIds()[0];
@@ -448,12 +481,21 @@
         assert.isTrue(lines[5].endsWith(String.fromCharCode(9) + '3'), 'wire 1 is the 3-segment feed section: ' + lines[5]);
         assert.isTrue(lines.includes('w1b,' + String.fromCharCode(9) + '0.0,' + String.fromCharCode(9) + '1.0'));
       });
-      test('the unit toggle converts the feed-section length exactly', () => {
+      test('the unit toggle converts a hand-set feed-section length exactly, and leaves automatic alone', () => {
+        const own = doc.querySelector('input[type="checkbox"][data-field="fineOwn"]');
+        own.checked = true;
+        own.dispatchEvent(new Event('change', { bubbles: true }));
         type('_scene', 'taper.fine', undefined, 0.1);
         setUnit('m');
         assert.close(win.WGC.getScene().taper.fine, 0.03048, 1e-9);
         setUnit('ft');
         assert.close(win.WGC.getScene().taper.fine, 0.1, 1e-9);
+        const own2 = doc.querySelector('input[type="checkbox"][data-field="fineOwn"]');
+        own2.checked = false;
+        own2.dispatchEvent(new Event('change', { bubbles: true }));
+        setUnit('m');
+        assert.equal(win.WGC.getScene().taper.fine, null);
+        setUnit('ft');
       });
       test('grading and frequency settings survive loading another preset', () => {
         type('_scene', 'taper.ratio', undefined, 1.8);
