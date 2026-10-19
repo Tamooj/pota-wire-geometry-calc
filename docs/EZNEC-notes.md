@@ -2,7 +2,7 @@
 
 Source: the free printable manual, `EZW70_User_Manual.pdf` (US letter), linked from https://www.eznec.com/ez70manual.html. Page numbers below are the manual's printed page numbers. These are paraphrased notes that drive what this app should export; check the manual before relying on a detail.
 
-## Wire import (Other > Import Wires From ASCII File), pp. 171-172
+## Wire import (File > Import Wires From ASCII File in current EZNEC 7; the 7.0 manual says Other menu), pp. 171-172
 - Optional units line, then one line per wire: `x1 y1 z1 x2 y2 z2 diameter [segments]`. `;` starts a comment. Diameter can be `#n` (AWG). Coordinates only: no sources, loads, ground, frequency or connections.
 - **Segments field (8th)**: a number, or `M` (minimum recommended), or blank/other (= "conservative" auto-segmentation).
 - Number format must follow the Windows regional decimal setting.

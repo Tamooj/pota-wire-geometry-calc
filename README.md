@@ -73,7 +73,7 @@ https://tamooj.github.io/pota-wire-geometry-calc/
 - **Three export formats**, toggled in the export panel:
   - **Generic** - minimal tab-separated table for manual paste
   - **EZNEC** - EZNEC's own wire-import file: save it as a text file, then in
-    EZNEC use **Other > Import Wires From ASCII File**
+    EZNEC use **File > Import Wires From ASCII File**
   - **MMANA** - a real MMANA-GAL `.maa`-format body, with a Frequency (MHz)
     field and a selector for which wire carries the source
 - Runs entirely client-side; nothing is sent anywhere
@@ -90,9 +90,9 @@ https://tamooj.github.io/pota-wire-geometry-calc/
    the export repeat it.
 2. In the export panel select **EZNEC**, click **Copy**, and paste the text into
    a plain text file somewhere easy to reach from the desktop.
-3. In EZNEC 7 choose **Other > Import Wires From ASCII File** (the menu named in
-   the EZNEC manual), pick **Replace Existing Wires**, then select the file you
-   saved. Your antenna should appear in the Wires window.
+3. In EZNEC 7 choose **File > Import Wires From ASCII File** (older versions and
+   the 7.0 manual list it under the Other menu), pick **Replace Existing Wires**,
+   then select the file you saved. Your antenna should appear in the Wires window.
 4. Set EZNEC to the proper frequency, and set the **Source** location to your
    feedpoint: typically **wire 1, 50% from E1** (`W1C`, the center of the
    3-segment feed section). The comment lines at the top of the export say
