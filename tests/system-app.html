@@ -105,15 +105,15 @@
       suite('Slider-drag render (jank fix)');
       test('dragging a slider does not replace its own DOM node', () => {
         const id = wireIds()[0];
-        const before = ctl(id, 'az', undefined, 'rng');
-        drag(id, 'az', undefined, 45);
-        drag(id, 'az', undefined, 200);
-        const after = ctl(id, 'az', undefined, 'rng');
+        const before = ctl(id, 'sup.az', 1, 'rng');
+        drag(id, 'sup.az', 1, 45);
+        drag(id, 'sup.az', 1, 200);
+        const after = ctl(id, 'sup.az', 1, 'rng');
         assert.isTrue(before === after, 'expected the same range-input DOM node to survive multiple input events (no full inputs-panel rebuild mid-drag)');
       });
       test('the number box follows the slider, and the outputs update on drag', () => {
         const id = wireIds()[0];
-        drag(id, 'az', undefined, 90);
+        drag(id, 'sup.az', 1, 90);
         drag(id, 'sup.d', 1, 30);
         const before = exportText();
         drag(id, 'sup.d', 1, 100);
@@ -140,9 +140,9 @@
       });
       test('azimuth typed outside 0-360 wraps to a compass bearing', () => {
         const id = wireIds()[0];
-        type(id, 'az', undefined, -90);
-        assert.equal(scene().elements[0].az, 270);
-        type(id, 'az', undefined, 90);
+        type(id, 'sup.az', 1, -90);
+        assert.equal(scene().elements[0].supports[1].az, 270);
+        type(id, 'sup.az', 1, 90);
       });
       test('negative heights/distances are clamped to zero', () => {
         const id = wireIds()[0];
@@ -150,13 +150,14 @@
         assert.equal(scene().elements[0].supports[1].z, 0);
         preset('sloper');
       });
-      test('support distances stay in order: raising an earlier one pushes later ones along', () => {
+      test('support distances are measured from the previous support, so changing one leaves the others alone', () => {
         preset('invv');
         const id = wireIds()[0];
+        const before = scene().elements[0].supports.map(q => q.d);
         type(id, 'sup.d', 1, 50);
-        const d = scene().elements[0].supports.map(s => s.d);
-        assert.isTrue(d[2] >= d[1], `expected d[2] (${d[2]}) >= d[1] (${d[1]})`);
-        assert.equal(ctl(id, 'sup.d', 2, 'num').value, String(d[2]), 'expected the pushed control to update on screen');
+        const after = scene().elements[0].supports.map(q => q.d);
+        assert.equal(after[1], 50);
+        assert.equal(after[2], before[2], 'the next leg keeps its own length');
         preset('sloper');
       });
 
@@ -195,11 +196,13 @@
       });
 
       suite('Adding, editing and removing wires and fans');
-      test('Add wire appends a second wire card, attached to the origin by default', () => {
+      test('Add wire appends a second wire card that starts at the END of the previous wire by default', () => {
         preset('sloper');
         doc.querySelector('[data-action="add-wire"]').click();
         assert.equal(wireIds().length, 2);
-        assert.equal(scene().elements[1].attach, null);
+        const att = scene().elements[1].attach;
+        assert.equal(att.el, wireIds()[0]);
+        assert.equal(att.idx, scene().elements[0].supports.length - 1);
         assert.isTrue(!!doc.querySelector(`select[data-el="${wireIds()[1]}"]`));
       });
       test('choosing an attach point moves the second wire onto the first wire\'s support', () => {
@@ -335,9 +338,9 @@
       test('angle sliders keep their 0-360 range when a large bearing is typed', () => {
         preset('sloper');
         const id = wireIds()[0];
-        type(id, 'az', undefined, 350);
-        assert.equal(ctl(id, 'az', undefined, 'rng').max, '360');
-        type(id, 'az', undefined, 90);
+        type(id, 'sup.az', 1, 350);
+        assert.equal(ctl(id, 'sup.az', 1, 'rng').max, '360');
+        type(id, 'sup.az', 1, 90);
       });
 
       suite('Segments per wire (through the real UI, grading off)');
@@ -635,7 +638,7 @@
       test('MMANA coordinates are always in meters regardless of the active display unit', () => {
         preset('sloper');
         const id = wireIds()[0];
-        type(id, 'az', undefined, 90);
+        type(id, 'sup.az', 1, 90);
         type(id, 'sup.z', 0, 0);
         type(id, 'sup.z', 1, 0);
         type(id, 'sup.d', 1, 100); // 100 ft
@@ -672,6 +675,118 @@
         preset('sloper');
         assert.isTrue(/\d+ ft/.test(doc.getElementById('svgTop').textContent), 'expected a ring label like "20 ft" in the plan view');
         assert.isTrue(doc.getElementById('svgSide').textContent.includes('ft'));
+      });
+
+      suite('Bent wires (per-leg bearings), add/remove support, and view labels');
+      function loadL() {
+        // feed at 10 ft, vertical to a 20 ft mast top, 45 ft east to 25 ft, then 75 ft north
+        preset('sloper');
+        const sc = win.WGC.getScene();
+        const w = sc.elements[0];
+        w.supports = [{ d: 0, az: 90, z: 10 }, { d: 0, az: 90, z: 20 }, { d: 45, az: 90, z: 25 }, { d: 75, az: 0, z: 25 }];
+        w.slack = [0, 0, 0];
+        win.WGC.applyModel(win.WGC.validateModel({ format: 2, scene: sc, unit: 'ft' }));
+      }
+      const supportPts = () => win.WGC.solveScene(win.WGC.getScene()).points.filter(p => p.kind === 'support');
+      const textsIn = svgId => Array.from(doc.getElementById(svgId).querySelectorAll('text')).map(x => x.textContent);
+      const clickAction = (action, id, idx) => doc.querySelector('[data-action="' + action + '"][data-el="' + id + '"][data-idx="' + idx + '"]').click();
+      test('the L antenna from the field: positions come out as measured', () => {
+        loadL();
+        const p = supportPts();
+        assert.equal(p.length, 4);
+        assert.close(p[2].x, 45, 1e-6);
+        assert.close(p[2].y, 0, 1e-6);
+        assert.close(p[3].x, 45, 1e-6);
+        assert.close(p[3].y, 75, 1e-6);
+        assert.close(p[3].z, 25, 1e-6);
+      });
+      test('the bearing control of a vertical leg is greyed out, and wakes up when the leg gets a distance', () => {
+        preset('invl');
+        const id = wireIds()[0];
+        assert.equal(ctl(id, 'sup.az', 1, 'num').disabled, true, 'leg 1 is vertical');
+        assert.equal(ctl(id, 'sup.az', 2, 'num').disabled, false);
+        type(id, 'sup.d', 1, 5);
+        assert.equal(ctl(id, 'sup.az', 1, 'num').disabled, false);
+        preset('sloper');
+      });
+      test('+ after on the last support adds a leg that keeps the previous bearing; typing its numbers places it', () => {
+        preset('invl');
+        const id = wireIds()[0];
+        clickAction('insert-support', id, 2);
+        assert.equal(scene().elements[0].supports.length, 4);
+        assert.equal(scene().elements[0].supports[3].az, 90, 'a new leg defaults to the previous leg bearing');
+        type(id, 'sup.d', 3, 75);
+        type(id, 'sup.az', 3, 0);
+        const p = supportPts();
+        assert.close(p[3].x, 50, 1e-6, 'the 50 ft east leg of the preset, then 75 ft north');
+        assert.close(p[3].y, 75, 1e-6);
+        preset('sloper');
+      });
+      test('+ after in the middle splits a leg without moving anything; removing it puts the leg back', () => {
+        loadL();
+        const id = wireIds()[0];
+        const before = supportPts().map(p => [p.x, p.y, p.z]);
+        clickAction('insert-support', id, 2);          // splits the 75 ft north leg
+        const mid = supportPts();
+        assert.equal(mid.length, 5);
+        assert.close(mid[3].x, 45, 1e-6);
+        assert.close(mid[3].y, 37.5, 1e-6);
+        assert.close(mid[4].y, 75, 1e-6, 'the old last support has not moved');
+        clickAction('remove-support', id, 3);
+        const after = supportPts().map(p => [p.x, p.y, p.z]);
+        assert.equal(JSON.stringify(after.map(v => v.map(n => Math.round(n * 1e6) / 1e6))), JSON.stringify(before.map(v => v.map(n => Math.round(n * 1e6) / 1e6))));
+      });
+      test('removing a corner support re-aims the next leg so later supports stay where they were', () => {
+        loadL();
+        const id = wireIds()[0];
+        const before = supportPts();
+        clickAction('remove-support', id, 2);          // remove the (45, 0, 25) corner
+        const after = supportPts();
+        assert.equal(after.length, 3);
+        assert.close(after[2].x, before[3].x, 1e-6);
+        assert.close(after[2].y, before[3].y, 1e-6);
+        assert.close(after[2].z, before[3].z, 1e-6);
+        const leg = scene().elements[0].supports[2];
+        assert.close(leg.d, Math.hypot(45, 75), 1e-6);
+        assert.close(leg.az, Math.atan2(45, 75) * 180 / Math.PI, 1e-6);
+      });
+      test('the side profile is unfolded: its title says so, and the far support sits at the full path distance', () => {
+        loadL();
+        assert.isTrue(doc.getElementById('wgcSideTitle').textContent.includes('along the wire'));
+        const m = win.WGC.solveScene(win.WGC.getScene());
+        assert.close(Math.max(...m.points.map(p => p.u)), 120, 1e-6);
+      });
+      test('Labels: supports numbers every support on the 3D, side and plan views, and off removes them', () => {
+        loadL();
+        const sel = doc.getElementById('wgcLabels');
+        sel.value = 'supports';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        ['svg3d', 'svgSide', 'svgTop'].forEach(v => ['S1', 'S2', 'S3', 'S4'].forEach(tag => assert.isTrue(textsIn(v).includes(tag), v + ' is missing ' + tag)));
+        sel.value = 'none';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        ['svg3d', 'svgSide', 'svgTop'].forEach(v => assert.isFalse(textsIn(v).includes('S1'), v + ' still labelled'));
+      });
+      test('Labels: wires shows the EZNEC wire numbers on the wires', () => {
+        loadL();
+        const sel = doc.getElementById('wgcLabels');
+        sel.value = 'wires';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        ['svg3d', 'svgTop'].forEach(v => ['W1', 'W2', 'W3'].forEach(tag => assert.isTrue(textsIn(v).includes(tag), v + ' is missing ' + tag)));
+        sel.value = 'none';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        preset('sloper');
+      });
+      test('with two wires the support labels carry the wire number (1.S2, 2.S1, ...)', () => {
+        preset('sloper');
+        doc.querySelector('[data-action="add-wire"]').click();
+        const sel = doc.getElementById('wgcLabels');
+        sel.value = 'supports';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        assert.isTrue(textsIn('svg3d').includes('1.S2'));
+        assert.isTrue(textsIn('svg3d').includes('2.S2'));
+        sel.value = 'none';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        preset('sloper');
       });
 
       suite('Save, load and auto-save');
@@ -724,8 +839,8 @@
         assert.isFalse(WG.validateModel(null).ok);
         assert.isFalse(WG.validateModel({}).ok);
         assert.isFalse(WG.validateModel({ scene: { elements: [] } }).ok);
-        assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'wire', az: 'x', supports: [{ d: 0, z: 1 }, { d: 1, z: 1 }] }] } }).ok);
-        assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'wire', az: 1, supports: [{ d: 0, z: 1 }] }] } }).ok);
+        assert.isFalse(WG.validateModel({ format: 2, scene: { elements: [{ id: 'a', name: 'A', kind: 'wire', supports: [{ d: 0, az: 0, z: 1 }, { d: 'far', az: 0, z: 1 }] }] } }).ok);
+        assert.isFalse(WG.validateModel({ format: 2, scene: { elements: [{ id: 'a', name: 'A', kind: 'wire', supports: [{ d: 0, az: 0, z: 1 }] }] } }).ok);
         assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'script' }] } }).ok);
         assert.isFalse(WG.validateModel({ scene: { elements: [{ id: 'a', name: 'A', kind: 'fan', n: 'four', len: 1, zEnd: 0, centerAz: 0, spread: 1 }] } }).ok);
       });
@@ -758,6 +873,16 @@
         win.localStorage.removeItem(WG.storageKey);
         assert.isFalse(WG.loadSaved(), 'with nothing saved, loading reports false');
         preset('sloper');
+      });
+      test('a model saved by the old format (v2, one azimuth per wire) is rejected with a reason, not guessed at', () => {
+        const snap = JSON.parse(JSON.stringify(WG.modelSnapshot()));
+        snap.format = 1;
+        const v = WG.validateModel(snap);
+        assert.isFalse(v.ok);
+        assert.isTrue(/older version/.test(v.error), 'expected an explanation, got: ' + v.error);
+        win.localStorage.setItem(WG.storageKey, JSON.stringify(snap));
+        assert.isFalse(WG.loadSaved(), 'an old auto-saved model is ignored');
+        win.localStorage.removeItem(WG.storageKey);
       });
       test('a corrupt saved value is ignored (the app falls back to its defaults)', () => {
         win.localStorage.setItem(WG.storageKey, '{ this is not json');

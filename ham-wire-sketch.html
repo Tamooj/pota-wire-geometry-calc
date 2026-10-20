@@ -458,7 +458,12 @@
       <div class="wgc-svg-box" style="margin-bottom:12px;">
         <div class="wgc-svg-title wgc-svg-title-row">
           <span>3D View (drag to rotate, wheel to zoom)</span>
-          <span style="display:flex; gap:4px;">
+          <span style="display:flex; gap:4px; align-items:center;">
+            <select id="wgcLabels" class="wgc-select" style="width:auto;" title="Number the supports or the exported wires on all three views">
+              <option value="none">Labels: off</option>
+              <option value="supports">Labels: supports</option>
+              <option value="wires">Labels: wires (EZNEC #)</option>
+            </select>
             <button class="wgc-btn small" data-view="top">Top</button>
             <button class="wgc-btn small" data-view="side">Side</button>
             <button class="wgc-btn small" data-view="reset">Reset</button>
@@ -516,8 +521,8 @@
   // Single source of truth; also mirrored in docs/DESIGN.md's Status line
   // for the more meaningful version number, but BUILD should tick up on every
   // single edit regardless of how small.
-  const APP_VERSION = 'v2.3.1';
-  const APP_BUILD = 15;
+  const APP_VERSION = 'v3.0.0';
+  const APP_BUILD = 16;
 
   const FT = 0.3048;
   const root = document.getElementById('wgcRoot');
@@ -608,10 +613,11 @@
   //   Wires/radials that start at the feed point are graded outward from it too. scene.freq = design MHz.
   //   element.segs = null (auto) | 'M' (minimum) | integer (segments per exported wire).
   //   scene.gauge = default AWG wire size; element.gauge = null (use default) or an AWG override.
-  //   wire: { id, kind:'wire', name, attach:null|{el,idx}, az,
-  //           supports:[{d,z}, ...],  // d = horizontal distance from the wire's
-  //                                   // start along az (supports[0].d is 0);
-  //                                   // z = height. >=2 supports.
+  //   wire: { id, kind:'wire', name, attach:null|{el,idx},
+  //           supports:[{d,az,z}, ...], // each support after the first is placed from the PREVIOUS
+  //                                     // support: d = horizontal distance, az = compass bearing
+  //                                     // (absolute, degrees from N) to it, z = height. d=0 is a
+  //                                     // vertical leg (az unused). supports[0] is the start. >=2 supports.
   //           slack:[...] }           // slack[i] = extra wire length in span i
   //                                   // (between supports i and i+1); 0 = taut,
   //                                   // >0 = catenary sag between those supports.
@@ -626,8 +632,8 @@
 
   function addWire(sc, o){
     const id = 'e' + (++sc.seq);
-    const el = { id, kind:'wire', name:'Wire ' + (++sc.wireN), attach:null, gauge:null, segs:null, az:90,
-                 supports:[{d:0,z:U(4)},{d:U(30),z:U(20)}], slack:[0] };
+    const el = { id, kind:'wire', name:'Wire ' + (++sc.wireN), attach:null, gauge:null, segs:null,
+                 supports:[{d:0,az:90,z:U(4)},{d:U(30),az:90,z:U(20)}], slack:[0] };
     Object.assign(el, o||{});
     sc.elements.push(el);
     if(!sc.feedEl) sc.feedEl = id;
@@ -644,22 +650,22 @@
 
   const PRESETS = [
     { key:'sloper', label:'Straight Sloper', build(sc){
-        addWire(sc, { az:90, supports:[{d:0,z:U(4)},{d:U(35),z:U(28)}], slack:[0] });
+        addWire(sc, { supports:[{d:0,az:90,z:U(4)},{d:U(35),az:90,z:U(28)}], slack:[0] });
     }},
     { key:'sagsloper', label:'Sagging Sloper', build(sc){
-        addWire(sc, { az:90, supports:[{d:0,z:U(4)},{d:U(30),z:U(26)}], slack:[U(2.8)] });
+        addWire(sc, { supports:[{d:0,az:90,z:U(4)},{d:U(30),az:90,z:U(26)}], slack:[U(2.8)] });
     }},
     { key:'invv', label:'Inverted-V', build(sc){
-        addWire(sc, { az:270, supports:[{d:0,z:U(4)},{d:U(22),z:U(32)},{d:U(40),z:U(6)}], slack:[0,0] });
+        addWire(sc, { supports:[{d:0,az:270,z:U(4)},{d:U(22),az:270,z:U(32)},{d:U(18),az:270,z:U(6)}], slack:[0,0] });
     }},
     { key:'saginvv', label:'Sagging Inverted-V', build(sc){
-        addWire(sc, { az:270, supports:[{d:0,z:U(4)},{d:U(22),z:U(32)},{d:U(40),z:U(6)}], slack:[U(1.5),U(1.5)] });
+        addWire(sc, { supports:[{d:0,az:270,z:U(4)},{d:U(22),az:270,z:U(32)},{d:U(18),az:270,z:U(6)}], slack:[U(1.5),U(1.5)] });
     }},
     { key:'invl', label:'Inverted-L', build(sc){
-        addWire(sc, { az:90, supports:[{d:0,z:U(2)},{d:0,z:U(30)},{d:U(50),z:U(30)}], slack:[0,0] });
+        addWire(sc, { supports:[{d:0,az:90,z:U(2)},{d:0,az:90,z:U(30)},{d:U(50),az:90,z:U(30)}], slack:[0,0] });
     }},
     { key:'sloperfan', label:'Sloper + Counterpoise', build(sc){
-        const w = addWire(sc, { az:90, supports:[{d:0,z:U(4)},{d:U(35),z:U(28)}], slack:[0] });
+        const w = addWire(sc, { supports:[{d:0,az:90,z:U(4)},{d:U(35),az:90,z:U(28)}], slack:[0] });
         addFan(sc, { attach:{el:w.id, idx:0}, n:4, len:U(25), zEnd:0, centerAz:270, spread:140 });
     }}
   ];
@@ -695,9 +701,13 @@
     sc.elements.forEach(el=>{
       if(el.kind==='wire'){
         while(el.supports.length < 2){
-          const last = el.supports[el.supports.length-1] || {d:0,z:0};
-          el.supports.push({ d:last.d + U(10), z:last.z });
+          const last = el.supports[el.supports.length-1] || {d:0,az:90,z:0};
+          el.supports.push({ d:U(10), az:last.az != null ? last.az : 90, z:last.z });
         }
+        el.supports.forEach((q,i)=>{
+          if(!(typeof q.az === 'number' && isFinite(q.az))) q.az = i > 0 ? el.supports[i-1].az : 90;
+          if(!(q.d >= 0)) q.d = 0;
+        });
         el.supports[0].d = 0;
         const spans = el.supports.length-1;
         el.slack = el.slack.slice(0, spans);
@@ -856,9 +866,9 @@
     }
     const ux = l > 1e-12 ? (b.x-a.x)/l : 0, uy = l > 1e-12 ? (b.y-a.y)/l : 0;
     const posAt = arc => {
-      if(curve){ const x = curve.xAtS(arc); return { x:a.x+ux*x, y:a.y+uy*x, z:a.z+curve.zAt(x) }; }
+      if(curve){ const x = curve.xAtS(arc); return { x:a.x+ux*x, y:a.y+uy*x, z:a.z+curve.zAt(x), u:a.u + x }; }
       const t = arc / S;
-      return { x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, z:a.z+(b.z-a.z)*t };
+      return { x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, z:a.z+(b.z-a.z)*t, u:a.u + l*t };
     };
     const nodes = [ { ...a } ];
     let cum = 0;
@@ -895,6 +905,7 @@
     const out = { elements:[], points:[], wires:[], warnings:[], summary:[], firstSub:{} };
     const anchors = {}; // wire id -> its support points, in 3D
     let total = 0;
+    let wireNo = 0;
 
     sc.elements.forEach(el=>{
       const info = { id:el.id, name:el.name, kind:el.kind, startZ:null, length:0 };
@@ -906,12 +917,17 @@
         const sup = el.supports;
         const start = att ? { x:att.x, y:att.y, z:att.z } : { x:ox, y:oy, z:sup[0].z };
         info.startZ = start.z;
-        const d0 = sup[0].d;
-        let prevD = 0;
-        const sp = sup.map((s,i)=>{
-          const d = Math.max(prevD, s.d - d0); prevD = d;
-          const o = az2xy(el.az, d);
-          return { x:start.x+o.x, y:start.y+o.y, z: i===0 ? start.z : s.z };
+        // Each support is placed from the previous one: horizontal distance d at compass bearing az.
+        // `u` is the running horizontal distance along the wire's path (for the side profile).
+        let cx = start.x, cy = start.y, cu = att && att.u != null ? att.u : 0;
+        const wno = ++wireNo;
+        const sp = sup.map((q,i)=>{
+          if(i > 0){
+            const d = Math.max(0, +q.d || 0);
+            const o = az2xy(+q.az || 0, d);
+            cx += o.x; cy += o.y; cu += d;
+          }
+          return { x:cx, y:cy, z: i===0 ? start.z : q.z, u:cu };
         });
         const nSpans = sp.length-1;
         out.firstSub[el.id] = out.wires.length;
@@ -922,7 +938,7 @@
         let wireLen = 0, slackSum = 0, minZ = Infinity;
         const sags = [];
         for(let i=0;i<=nSpans;i++){
-          out.points.push({ ...sp[i], label:`${el.name} · S${i+1}`, kind:'support', el:el.id });
+          out.points.push({ ...sp[i], label:`${el.name} · S${i+1}`, kind:'support', el:el.id, tag:`S${i+1}`, wno });
           minZ = Math.min(minZ, sp[i].z);
           if(i===nSpans) break;
           const a = sp[i], b = sp[i+1];
@@ -945,7 +961,7 @@
           if(curve){
             const N = curve.pts.length-1;
             const ux = (b.x-a.x)/l, uy = (b.y-a.y)/l;
-            const sub = curve.pts.map((c,k)=>({ x:a.x+ux*c.x, y:a.y+uy*c.x, z:a.z+c.z }));
+            const sub = curve.pts.map((c,k)=>({ x:a.x+ux*c.x, y:a.y+uy*c.x, z:a.z+c.z, u:a.u + c.x }));
             sub[0] = { ...a }; sub[N] = { ...b };
             for(let k=1;k<N;k++){
               out.points.push({ ...sub[k], label:`${el.name} · span ${i+1} pt ${k}`, kind:'mid', el:el.id });
@@ -968,7 +984,7 @@
         if(slackSum > 0) out.summary.push([`${el.name} slack`, slackSum, 'length']);
         sags.forEach(([i,m])=>out.summary.push([nSpans===1 ? `${el.name} max sag` : `${el.name} span ${i+1} max sag`, m, 'length']));
       } else {
-        const P = att ? { x:att.x, y:att.y, z:att.z } : { x:ox, y:oy, z:0 };
+        const P = att ? { x:att.x, y:att.y, z:att.z, u:att.u || 0 } : { x:ox, y:oy, z:0, u:0 };
         info.startZ = P.z;
         const n = Math.max(1, Math.round(el.n));
         // At a full 360° spread the first and last radial are 360° apart, i.e. the
@@ -988,13 +1004,13 @@
         for(let i=0;i<n;i++){
           const az = n===1 ? el.centerAz : el.centerAz - el.spread/2 + i*step;
           const o = az2xy(az, reach);
-          const end = { x:P.x+o.x, y:P.y+o.y, z:el.zEnd };
+          const end = { x:P.x+o.x, y:P.y+o.y, z:el.zEnd, u:P.u + reach };
           if(T && each > 1e-9){
             emitGraded(out, el, { ...P }, end, reach, dz, each, 0, false, `${el.name} R${i+1}`, 0, T, fanAtFeed, false);
           } else {
             out.wires.push({ label:`${el.name} R${i+1}`, from:{...P}, to:end, el:el.id });
           }
-          out.points.push({ ...end, label:`${el.name} · R${i+1} end`, kind:'end', el:el.id });
+          out.points.push({ ...end, label:`${el.name} · R${i+1} end`, kind:'end', el:el.id, tag:`R${i+1}` });
         }
         info.length = n*each;
         total += info.length;
@@ -1056,6 +1072,7 @@
     if(field==='gauge') return el.gauge == null ? scene.gauge : el.gauge;
     if(field.startsWith('taper.')) return scene.taper[field.slice(6)];
     if(field==='sup.d') return el.supports[idx].d;
+    if(field==='sup.az') return el.supports[idx].az;
     if(field==='sup.z') return el.supports[idx].z;
     if(field==='slack') return el.slack[idx];
     return el[field];
@@ -1063,6 +1080,7 @@
   function setVal(el, field, idx, v){
     if(field.startsWith('taper.')) scene.taper[field.slice(6)] = v;
     else if(field==='sup.d') el.supports[idx].d = v;
+    else if(field==='sup.az') el.supports[idx].az = v;
     else if(field==='sup.z') el.supports[idx].z = v;
     else if(field==='slack') el.slack[idx] = v;
     else el[field] = v;
@@ -1076,26 +1094,20 @@
     if(field==='taper.ratio') return Math.min(3, Math.max(1.05, v));
     if(field==='taper.div') return Math.min(200, Math.max(4, v));
     if(field==='len') return Math.max(0.01, v);
-    if(field==='az' || field==='centerAz') return v;
+    if(field==='az' || field==='centerAz' || field==='sup.az') return v;
     return Math.max(0, v); // sup.d, sup.z, slack, zEnd
   }
   function findEl(id){ return id==='_scene' ? scene : scene.elements.find(e=>e.id===id); }
   function wrapAz(v){ return ((v % 360) + 360) % 360; }
   function kindOf(field){
     if(field==='sup.d') return 'dist';
+    if(field==='sup.az') return 'az';
     if(field==='sup.z' || field==='zEnd') return 'height';
     if(field==='taper.fine') return 'fine';
     if(field==='taper.ratio') return 'ratio';
     if(field==='taper.div') return 'div';
     return field; // slack, len, az, spread, n
   }
-  // Keeps support distances non-decreasing along the wire.
-  function enforceMonotone(el){
-    for(let j=1;j<el.supports.length;j++){
-      if(el.supports[j].d < el.supports[j-1].d) el.supports[j].d = el.supports[j-1].d;
-    }
-  }
-
   // ---------- Parameter panel ----------
   function fieldHTML(o){
     const attrs = `data-el="${o.el}" data-field="${o.field}"` + (o.idx!==undefined ? ` data-idx="${o.idx}"` : '');
@@ -1201,7 +1213,6 @@
       </div>
       <div class="wgc-field"><label>Starts at</label>
         <select class="wgc-select" data-el="${el.id}" data-field="attach">${attachOptionsHTML(el, listIdx)}</select></div>
-      ${fieldHTML({ el:el.id, field:'az', label:'Azimuth (° from N)', value:el.az, kind:'az', suffix:'°' })}
       ${gaugeFieldHTML(el, false)}
       ${segFieldHTML(el)}`;
     const nSup = el.supports.length;
@@ -1212,7 +1223,8 @@
         ${i>0 && nSup>2 ? `<button class="wgc-btn small danger" data-action="remove-support" data-el="${el.id}" data-idx="${i}" title="Remove this support">✕</button>` : ''}
         </span></div>`;
       if(i>0){
-        h += fieldHTML({ el:el.id, field:'sup.d', idx:i, label:'Distance from start', value:s.d, kind:'dist' });
+        h += fieldHTML({ el:el.id, field:'sup.d', idx:i, label:'Distance from previous support', value:s.d, kind:'dist' });
+        h += fieldHTML({ el:el.id, field:'sup.az', idx:i, label:'Bearing from previous support (° from N)', value:s.az, kind:'az', suffix:'°' });
       }
       h += fieldHTML({ el:el.id, field:'sup.z', idx:i, label: i===0 && attached ? 'Height (from attach point)' : 'Height', value:s.z, kind:'height', readonly: i===0 && attached });
       if(i<nSup-1){
@@ -1249,7 +1261,7 @@
   function renderInputs(){
     const wireCount = scene.elements.filter(e=>e.kind==='wire').length;
     let h = `<div class="wgc-panel-label">Wires &amp; Counterpoise</div>
-      <div class="wgc-hint" style="margin-bottom:10px;">A wire runs along one azimuth through its supports (distance + height). Slack between two supports hangs as a catenary; zero slack is taut. Feed is the start of the source wire.</div>
+      <div class="wgc-hint" style="margin-bottom:10px;">A wire is a chain of supports. Each support is placed from the previous one by a horizontal distance and a compass bearing, plus its height (distance 0 = a vertical leg). Slack between two supports hangs as a catenary; zero slack is taut. Feed is the start of the source wire.</div>
       ${gaugeFieldHTML(scene, true)}
       ${taperPanelHTML()}`;
     scene.elements.forEach((el,i)=>{
@@ -1267,9 +1279,12 @@
   // changes (support ordering, mirrored attach heights) show up immediately.
   function syncControls(except){
     document.querySelectorAll('#wgcInputs [data-role]').forEach(inp=>{
-      if(inp === except) return;
       const el = findEl(inp.dataset.el);
       if(!el) return;
+      if(inp.dataset.field === 'sup.az' && inp.dataset.idx !== undefined && el.supports){
+        inp.disabled = !(el.supports[+inp.dataset.idx].d > 1e-9);
+      }
+      if(inp === except) return;
       const v = getVal(el, inp.dataset.field, inp.dataset.idx===undefined ? undefined : +inp.dataset.idx);
       if(v===undefined || v===null) return;
       if(inp.dataset.role==='num'){
@@ -1293,17 +1308,30 @@
     sanitizeScene(scene);
   }
 
+  // Plan-view offset of each support from the wire's start, following the per-leg bearings.
+  function legOffsets(el){
+    const P = [ { x:0, y:0 } ];
+    for(let k=1;k<el.supports.length;k++){
+      const o = az2xy(el.supports[k].az || 0, Math.max(0, el.supports[k].d || 0));
+      P.push({ x:P[k-1].x + o.x, y:P[k-1].y + o.y });
+    }
+    return P;
+  }
+
   function insertSupport(el, idx){
     const n = el.supports.length;
     if(idx >= n-1){
       const last = el.supports[n-1];
-      el.supports.push({ d:last.d + U(10), z:last.z });
+      el.supports.push({ d:U(10), az:last.az != null ? last.az : 90, z:last.z });
       el.slack.push(0);
     } else {
+      // split the leg idx -> idx+1 in two halves, so the geometry does not move
       const a = el.supports[idx], b = el.supports[idx+1];
-      el.supports.splice(idx+1, 0, { d:(a.d+b.d)/2, z:(a.z+b.z)/2 });
-      const s = el.slack[idx] || 0;
-      el.slack.splice(idx, 1, s/2, s/2);
+      const D = b.d;
+      el.supports.splice(idx+1, 0, { d:D/2, az:b.az, z:(a.z+b.z)/2 });
+      b.d = D/2;
+      const sl = el.slack[idx] || 0;
+      el.slack.splice(idx, 1, sl/2, sl/2);
     }
     scene.elements.forEach(o=>{
       if(o.attach && o.attach.el===el.id && o.attach.idx > idx) o.attach.idx++;
@@ -1312,7 +1340,15 @@
 
   function removeSupport(el, idx){
     if(idx<=0 || el.supports.length<=2) return;
+    const P = legOffsets(el);
     el.supports.splice(idx, 1);
+    if(idx < el.supports.length){
+      // the support that followed now sits right after support idx-1: rebuild its leg from the real positions
+      const dx = P[idx+1].x - P[idx-1].x, dy = P[idx+1].y - P[idx-1].y;
+      const next = el.supports[idx];
+      next.d = Math.hypot(dx, dy);
+      if(next.d > 1e-9) next.az = wrapAz(Math.atan2(dx, dy)*180/Math.PI);
+    }
     if(idx >= el.slack.length) el.slack.pop();
     else {
       const merged = (el.slack[idx-1]||0) + (el.slack[idx]||0);
@@ -1564,24 +1600,47 @@
     else ta.value = buildGenericExport(model);
   }
 
+  // ---------- Labels (supports / EZNEC wire numbers) on all three views ----------
+  let labelMode = 'none';
+  // `proj` maps a point (x, y, z, u) to [screenX, screenY] for the view being drawn.
+  function labelSVG(model, proj, fs){
+    if(labelMode === 'none') return '';
+    const attrs = `font-size="${fs}" fill="#edeae0" stroke="#12150f" stroke-width="2.5" paint-order="stroke" font-family="IBM Plex Mono"`;
+    const nWires = scene.elements.filter(e=>e.kind==='wire').length;
+    let out = '';
+    if(labelMode === 'supports'){
+      model.points.forEach(p=>{
+        if(!p.tag) return;
+        const q = proj(p);
+        const text = (p.wno && nWires > 1 ? p.wno + '.' : '') + p.tag;
+        out += `<text x="${(q[0]+5).toFixed(1)}" y="${(q[1]-5).toFixed(1)}" ${attrs}>${text}</text>`;
+      });
+    } else {
+      // wire numbers as EZNEC will number them (W1, W2, ...): skip wires too short to label legibly,
+      // except the source wire's first wire (the feed section)
+      const feedIdx = model.firstSub[scene.feedEl];
+      model.wires.forEach((w,i)=>{
+        const A = proj(w.from), B = proj(w.to);
+        if(Math.hypot(B[0]-A[0], B[1]-A[1]) < 16 && i !== feedIdx) return;
+        const mx = (A[0]+B[0])/2, my = (A[1]+B[1])/2;
+        out += `<text x="${(mx+3).toFixed(1)}" y="${(my-3).toFixed(1)}" ${attrs}>W${i+1}</text>`;
+      });
+    }
+    return out;
+  }
+
   // ---------- Rendering: 2D views ----------
   const W2 = 320, H2 = 220;
-
-  function mainAz(){
-    const w = scene.elements.find(e=>e.kind==='wire');
-    return w ? w.az : 0;
-  }
 
   function renderSide(model){
     const side = document.getElementById('svgSide');
     const title = document.getElementById('wgcSideTitle');
     if(!model.points.length){ side.innerHTML=''; return; }
-    // Project onto the vertical plane along the first wire's azimuth. Wires
-    // running in other directions are foreshortened — the 3D view shows them true.
-    const az0 = mainAz();
-    title.textContent = `Side Profile (looking along ${Math.round(az0)}° axis)`;
-    const sa = Math.sin(az0*Math.PI/180), ca = Math.cos(az0*Math.PI/180);
-    const hv = p => p.x*sa + p.y*ca;
+    // Height against distance along each wire's plan-view path (`u`): a wire with bends is
+    // drawn unfolded, so every leg shows its true horizontal length. Branches start at
+    // the distance of the support they attach to; radials run to the right of their attach point.
+    title.textContent = 'Side Profile (height vs. distance along the wire)';
+    const hv = p => p.u;
     const hs = model.points.map(hv), zs = model.points.map(p=>p.z);
     const minH = Math.min(0,...hs), maxH = Math.max(0,...hs);
     const maxZ = Math.max(1,...zs);
@@ -1612,6 +1671,7 @@
       if(p.kind==='mid') return;
       s += `<circle cx="${sx(hv(p))}" cy="${sz(p.z)}" r="3" fill="#edeae0"/>`;
     });
+    s += labelSVG(model, p=>[sx(hv(p)), sz(p.z)], 8);
     side.innerHTML = s;
   }
 
@@ -1646,6 +1706,7 @@
       if(p.kind==='mid') return;
       s += `<circle cx="${tx(p.x)}" cy="${ty(p.y)}" r="3" fill="#edeae0"/>`;
     });
+    s += labelSVG(model, p=>[tx(p.x), ty(p.y)], 8);
     s += `<circle cx="${tx(0)}" cy="${ty(0)}" r="5" fill="none" stroke="#7fb069" stroke-width="1.5"/>`;
     top.innerHTML = s;
   }
@@ -1703,6 +1764,7 @@
     const f = P(model.feed);
     s += `<circle cx="${f[0].toFixed(1)}" cy="${f[1].toFixed(1)}" r="6" fill="none" stroke="#7fb069" stroke-width="1.5"/>`;
     s += `<text x="8" y="${H3-8}" font-size="9" fill="#8a8168" font-family="IBM Plex Mono">ground square: ${tickLabel(Math.round(side*10)/10)} ${uLabel()} per side · height scale ${tickLabel(Math.round(maxZ*10)/10)} ${uLabel()}</text>`;
+    s += labelSVG(model, p=>P(p), 9);
     svg.innerHTML = s;
   }
 
@@ -1779,13 +1841,14 @@
   const PERSIST = !/[?&]nosave=1/.test(location.search);
 
   function modelSnapshot(){
-    return { app:'wire-geometry-calc', format:1, version:APP_VERSION, unit, exportFormat, scene };
+    return { app:'wire-geometry-calc', format:2, version:APP_VERSION, unit, exportFormat, scene };
   }
 
   // Checks anything parsed from storage or a file before it is allowed near the app state.
   function validateModel(obj){
     try {
       if(!obj || typeof obj !== 'object') throw 'not a model';
+      if(obj.format !== 2) throw 'saved by an older version of the tool (the model format changed in v3.0)';
       const sc = obj.scene;
       if(!sc || !Array.isArray(sc.elements) || !sc.elements.length) throw 'no wires in the file';
       const num = v => typeof v === 'number' && isFinite(v);
@@ -1793,7 +1856,7 @@
         if(!el || typeof el.id !== 'string' || typeof el.name !== 'string') throw 'bad element';
         if(el.kind === 'wire'){
           if(!Array.isArray(el.supports) || el.supports.length < 2 || !el.supports.every(p=>p && num(p.d) && num(p.z))) throw 'bad supports';
-          if(!num(el.az)) throw 'bad azimuth';
+          el.supports.forEach(q=>{ if(!num(q.az)) q.az = 90; });
           el.slack = (Array.isArray(el.slack) ? el.slack : []).map(v=>num(v) ? v : 0);
         } else if(el.kind === 'fan'){
           ['n','len','zEnd','centerAz','spread'].forEach(k=>{ if(!num(el[k])) throw 'bad fan field ' + k; });
@@ -1907,7 +1970,6 @@
     const v = parseFloat(inp.value);
     if(isNaN(v)) return;
     setVal(el, field, idx, clampVal(field, v));
-    if(field==='sup.d') enforceMonotone(el);
     // mirror into the paired control (slider <-> number box)
     const twin = inputsEl.querySelector(`[data-role="${inp.dataset.role==='num'?'rng':'num'}"][data-el="${inp.dataset.el}"][data-field="${inp.dataset.field}"]` + (inp.dataset.idx!==undefined ? `[data-idx="${inp.dataset.idx}"]` : ''));
     if(twin) twin.value = inp.dataset.role==='rng' ? fmtIn(parseFloat(inp.value)) : (+getVal(el, field, idx)).toFixed(6);
@@ -1951,9 +2013,8 @@
     let v = parseFloat(inp.value);
     if(isNaN(v)) v = getVal(el, field, idx);
     v = clampVal(field, v);
-    if(field==='az' || field==='centerAz') v = wrapAz(v);
+    if(field==='az' || field==='centerAz' || field==='sup.az') v = wrapAz(v);
     setVal(el, field, idx, v);
-    if(field==='sup.d') enforceMonotone(el);
     // Rebuild the panel only if this value wants a different slider range.
     const rng = inputsEl.querySelector(`[data-role="rng"][data-el="${inp.dataset.el}"][data-field="${inp.dataset.field}"]` + (inp.dataset.idx!==undefined ? `[data-idx="${inp.dataset.idx}"]` : ''));
     const spec = rng ? sliderSpec(kindOf(field), v) : null;
@@ -1971,13 +2032,27 @@
     const el = scene.elements.find(x=>x.id===btn.dataset.el);
     const idx = btn.dataset.idx===undefined ? undefined : +btn.dataset.idx;
     switch(btn.dataset.action){
-      case 'add-wire': addWire(scene); break;
+      case 'add-wire': {
+        const prev = scene.elements.filter(x=>x.kind==='wire').pop();
+        const w = addWire(scene);
+        if(prev){
+          const end = prev.supports[prev.supports.length-1];
+          w.attach = { el:prev.id, idx:prev.supports.length-1 };
+          w.supports[1].z = end.z;
+        }
+        break;
+      }
       case 'add-fan': addFan(scene, { attach: scene.elements.find(x=>x.kind==='wire') ? { el:scene.elements.find(x=>x.kind==='wire').id, idx:0 } : null }); break;
       case 'remove-el': removeElement(btn.dataset.el); break;
       case 'insert-support': if(el) insertSupport(el, idx); break;
       case 'remove-support': if(el) removeSupport(el, idx); break;
     }
     render();
+  });
+
+  document.getElementById('wgcLabels').addEventListener('change', e=>{
+    labelMode = e.target.value;
+    renderOutputs();
   });
 
   document.getElementById('wgcSourceSelect').addEventListener('change', e=>{

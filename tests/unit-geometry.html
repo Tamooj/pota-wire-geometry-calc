@@ -23,9 +23,15 @@
     document.getElementById('app').addEventListener('load', () => {
       const WGC = document.getElementById('app').contentWindow.WGC;
 
-      // Scene literals: wires are [{d,z}...] supports with per-span slack.
+      // Scene literals. wire() takes the older, convenient form (one azimuth, CUMULATIVE distances
+      // from the start) and converts it to the real model: per-support distance FROM THE PREVIOUS
+      // support plus an absolute bearing. legwire() takes the real per-leg form directly.
       function wire(id, az, supports, slack, attach) {
-        return { id, kind: 'wire', name: id, attach: attach || null, az, supports, slack: slack || supports.slice(1).map(() => 0) };
+        const sup = supports.map((q, i) => ({ d: i === 0 ? 0 : Math.max(0, q.d - supports[i - 1].d), az, z: q.z }));
+        return { id, kind: 'wire', name: id, attach: attach || null, supports: sup, slack: slack || supports.slice(1).map(() => 0) };
+      }
+      function legwire(id, supports, slack, attach) {
+        return { id, kind: 'wire', name: id, attach: attach || null, supports, slack: slack || supports.slice(1).map(() => 0) };
       }
       function fan(id, attach, o) {
         return Object.assign({ id, kind: 'fan', name: id, attach, n: 4, len: 25, zEnd: 0, centerAz: 270, spread: 140 }, o || {});
@@ -174,6 +180,71 @@
         assert.close(m.feed.y, 0, 1e-9);
         assert.close(m.wires[1].from.x, 0, 1e-9);
         assert.close(m.wires[0].from.x, -50, 1e-9, 'wire A should now sit 50 west of the feed');
+      });
+
+      suite('Per-leg bearings (absolute bearing from the previous support)');
+      const supportsOf = m => m.points.filter(q => q.kind === 'support');
+      test('vertical leg, then 45 ft east, then 75 ft north: positions, path distance and wire length', () => {
+        const m = WGC.solveScene(scene([legwire('W', [
+          { d: 0, az: 90, z: 10 }, { d: 0, az: 90, z: 20 }, { d: 45, az: 90, z: 25 }, { d: 75, az: 0, z: 25 }
+        ])]));
+        const p = supportsOf(m);
+        assert.equal(p.length, 4);
+        [[0, 0, 10, 0], [0, 0, 20, 0], [45, 0, 25, 45], [45, 75, 25, 120]].forEach((e, i) => {
+          assert.close(p[i].x, e[0], 1e-9, 'S' + (i + 1) + ' x');
+          assert.close(p[i].y, e[1], 1e-9, 'S' + (i + 1) + ' y');
+          assert.close(p[i].z, e[2], 1e-9, 'S' + (i + 1) + ' z');
+          assert.close(p[i].u, e[3], 1e-9, 'S' + (i + 1) + ' path distance');
+        });
+        assert.close(summaryOf(m, 'W length'), 10 + Math.hypot(45, 5) + 75, 1e-9);
+      });
+      test('bearing is absolute, not relative to the previous leg: east then east is straight, east then south doubles back', () => {
+        const straight = supportsOf(WGC.solveScene(scene([legwire('W', [{ d: 0, az: 90, z: 5 }, { d: 10, az: 90, z: 5 }, { d: 10, az: 90, z: 5 }])])));
+        assert.close(straight[2].x, 20, 1e-9);
+        assert.close(straight[2].y, 0, 1e-9);
+        const turned = supportsOf(WGC.solveScene(scene([legwire('W', [{ d: 0, az: 90, z: 5 }, { d: 10, az: 90, z: 5 }, { d: 10, az: 180, z: 5 }])])));
+        assert.close(turned[2].x, 10, 1e-9);
+        assert.close(turned[2].y, -10, 1e-9);
+      });
+      test('a vertical leg (distance 0) ignores its bearing', () => {
+        const a = supportsOf(WGC.solveScene(scene([legwire('W', [{ d: 0, az: 0, z: 5 }, { d: 0, az: 0, z: 25 }, { d: 20, az: 90, z: 25 }])])));
+        const b = supportsOf(WGC.solveScene(scene([legwire('W', [{ d: 0, az: 0, z: 5 }, { d: 0, az: 217, z: 25 }, { d: 20, az: 90, z: 25 }])])));
+        a.forEach((q, i) => { assert.close(q.x, b[i].x, 1e-9); assert.close(q.y, b[i].y, 1e-9); });
+      });
+      test('later supports follow earlier ones: rotating the first leg swings everything after it', () => {
+        const base = [{ d: 0, az: 0, z: 5 }, { d: 10, az: 90, z: 5 }, { d: 10, az: 0, z: 5 }];
+        const before = supportsOf(WGC.solveScene(scene([legwire('W', base)])));
+        base[1] = { d: 10, az: 180, z: 5 };
+        const after = supportsOf(WGC.solveScene(scene([legwire('W', base)])));
+        assert.close(before[1].x, 10, 1e-9);
+        assert.close(after[1].y, -10, 1e-9);
+        assert.close(after[2].y, 0, 1e-9, 'the third support moved with it: -10 + 10 north');
+      });
+      test('each leg can sag on its own: slack on the horizontal leg only', () => {
+        const m = WGC.solveScene(scene([legwire('W', [
+          { d: 0, az: 90, z: 10 }, { d: 0, az: 90, z: 20 }, { d: 45, az: 90, z: 25 }, { d: 75, az: 0, z: 25 }
+        ], [0, 3, 0])]));
+        assert.equal(m.wires.length, 1 + 10 + 1, 'vertical leg, sagging leg (10 sub-wires), taut leg');
+        assert.close(summaryOf(m, 'W slack'), 3, 1e-9);
+      });
+      test('every point carries its distance along the wire path (for the unfolded side profile)', () => {
+        const sc = scene([
+          legwire('A', [{ d: 0, az: 90, z: 10 }, { d: 20, az: 90, z: 12 }, { d: 30, az: 0, z: 12 }]),
+          legwire('B', [{ d: 0, az: 0, z: 0 }, { d: 15, az: 180, z: 5 }], [0], { el: 'A', idx: 2 })
+        ]);
+        const m = WGC.solveScene(sc);
+        m.points.concat(m.wires.flatMap(w => [w.from, w.to])).forEach(q => assert.isTrue(typeof q.u === 'number' && isFinite(q.u)));
+        const a3 = supportsOf(m).find(q => q.label === 'A · S3');
+        const b1 = supportsOf(m).find(q => q.label === 'B · S1');
+        const b2 = supportsOf(m).find(q => q.label === 'B · S2');
+        assert.close(a3.u, 50, 1e-9);
+        assert.close(b1.u, 50, 1e-9, 'a branch starts at the path distance of the support it attaches to');
+        assert.close(b2.u, 65, 1e-9);
+      });
+      test('support tags and wire ordinals are provided for the view labels', () => {
+        const m = WGC.solveScene(scene([wire('A', 90, [{ d: 0, z: 1 }, { d: 10, z: 2 }]), wire('B', 0, [{ d: 0, z: 1 }, { d: 10, z: 2 }])]));
+        const tags = supportsOf(m).map(q => q.wno + ':' + q.tag);
+        assert.equal(tags.join(','), '1:S1,1:S2,2:S1,2:S2');
       });
 
       suite('Counterpoise fan — 360° spread bug fix and attach behaviour');

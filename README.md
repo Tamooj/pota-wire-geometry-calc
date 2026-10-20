@@ -42,15 +42,19 @@ https://tamooj.github.io/pota-wire-geometry-calc/ham-wire-sketch.html
 
 ## Features
 
-- **One screen, one model.** A *wire* runs along a compass bearing through its
-  *supports* (a horizontal distance and a height each). The span between two
-  neighbouring supports is either taut, or - if you give it some **slack** -
-  hangs as a true catenary. That covers, with no mode switch:
+- **One screen, one model.** A *wire* is a chain of *supports*. Each support
+  is placed from the **previous** one by a horizontal distance, a **compass
+  bearing** to it (absolute, not relative to the leg before) and a height; a
+  distance of 0 is a vertical leg. The span between two neighbouring supports
+  is either taut, or - if you give it some **slack** - hangs as a true catenary.
+  That covers, with no mode switch:
   - straight or sagging slopers (two supports),
   - an inverted-V with a peak in the middle, taut or sagging on either side
     (three supports),
-  - an inverted-L (first span vertical),
-  - bent, non-collinear V's (a second wire attached to the first wire's apex).
+  - an inverted-L, or a mast with a horizontal run and a turn: vertical leg,
+    then 45 ft east, then 75 ft north (each leg has its own bearing),
+  - several wires (a second wire can start at any support of an earlier one;
+    a new wire starts at the end of the previous wire by default).
 - **Counterpoise fans** attach to any support, so a sloper and its counterpoise
   live in one model and export as **one merged wire list** - no more pasting two
   tables together and fixing wire numbers by hand. Radial length is the cut
@@ -63,8 +67,11 @@ https://tamooj.github.io/pota-wire-geometry-calc/ham-wire-sketch.html
 - **Feet / meters toggle** converts the stored values exactly (35 ft is 10.668 m
   and back again, with no rounding drift).
 - **Live views** - a rotatable **3D view** (drag, wheel, Top/Side/Reset) with a
-  ground outline at Z=0, plus side-profile and plan views, all with round-number
-  scale labels in the current unit.
+  ground outline at Z=0, plus a side profile (height against distance along the
+  wire, so bent wires are drawn unfolded) and a plan view, all with round-number
+  scale labels in the current unit. A **Labels** menu numbers the **supports**
+  (S1, S2, ...) or the exported **wires** (W1, W2, ... as EZNEC will number them)
+  on all three views.
 - **Wire gauge**: a default AWG size plus a per-wire (or per-counterpoise) override, sliders from #10 to #24; both exports use it.
 - **Graded segments** (on by default): the radiator starts with a 3-segment feed section for the source and its segments grow smoothly to about a twentieth of a wavelength, and the counterpoise radials are graded outward from the feed the same way. EZNEC does not accept a source on the end segment of several joined wires (such as a counterpoise at the feed), and abrupt changes in segment length hurt accuracy. The metrics strip shows the total segment count and warns above EZNEC's limit of 2000. With grading off, segments per wire can be left to EZNEC, set to its minimum, or fixed.
 - **Your work is kept**: the current model is saved automatically in your browser and comes back when you reload the page, and **Save model / Load model** write and read it as a small JSON file (useful for keeping versions, or moving between browsers).
@@ -116,9 +123,10 @@ load again later (the tool also remembers your last model in the browser).
 - **The feedpoint is the origin** `(0, 0, z_feed)` - the start of the source
   wire; everything else is positioned relative to it, matching how you'd
   actually stake out a site
-- **Azimuth** is entered as compass bearing in degrees from North (0 = N,
-  90 = E), matching ham convention rather than math convention
-- **Distances** along a wire are horizontal (plan-view) distances from its start
+- **Bearings** are compass bearings in degrees from North (0 = N, 90 = E),
+  matching ham convention. A leg's bearing is the true bearing from the previous
+  support to this one, not a turn relative to the leg before
+- **Distances** are horizontal (plan-view) distances from the previous support
 
 ## Known limitations
 
